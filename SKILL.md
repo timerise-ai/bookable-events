@@ -1,0 +1,148 @@
+---
+name: bookable-events
+description: >
+  Build bookable events with Stripe payments and an anti-no-show card hold:
+  capacity-limited registration for free and paid events, Stripe Checkout
+  tickets, refundable deposits on free events that are released when the
+  guest checks in and captured when they don't show, staff check-in, refunds
+  and event cancellation. Use when: (1) a venue, club, studio, school or
+  community runs classes, workshops, tournaments, meetups or open days with
+  limited seats, (2) free events suffer no-shows and need a deposit or card
+  hold, (3) an existing event-registration or ticketing module needs auditing,
+  (4) the user mentions: event registration, ticketed events, RSVP with
+  deposit, no-show fee, no-show deposit, card hold, hold funds, authorize and
+  capture later, capture_method manual, uncaptured payment, capture_before,
+  SetupIntent, off_session, "release the deposit on check-in", "charge
+  no-shows", escrow for attendance, Stripe Checkout tickets, refund on cancel,
+  cancel event and refund everyone. Carries a pure participant state machine,
+  the hold timing that survives Visa's shorter merchant-initiated window, any
+  ISO currency with USD by default, and regression tests for defects that
+  leaked money in production. Next.js App Router; Firestore or Postgres.
+  Not a marketplace payout skill.
+---
+
+# Bookable Events with No-Show Deposits
+
+Events are the easy half. The hard half is money that moves while seats are
+scarce: a seat taken before payment, a payment that arrives after the seat
+expired, a hold that lapses before the no-show can be charged. This skill runs
+every change through **one pure state machine inside a transaction, and calls
+Stripe only after commit**, leaving a durable intent a single cron retries
+until Stripe confirms.
+
+## When to use
+
+- Capacity-limited events (free or paid) with online registration and payment.
+- Free events that need a refundable deposit to stop no-shows.
+- Staff check-in at the door that must drive money (release vs capture).
+- Auditing an existing module — [provenance.md](references/provenance.md) lists
+  the defects this one shipped with.
+
+## When NOT to use
+
+- **Splitting payments between sellers, payouts, marketplace escrow** — use the
+  sibling `stripe-connect-subscriptions` skill.
+- **Recurring memberships or subscriptions** — also `stripe-connect-subscriptions`.
+- **Time-slot resource booking (lanes, courts, rooms by the hour)** — a booking
+  engine's job; this skill only notes where events block such slots.
+- **Walk-up touchscreen registration** — the sibling `booking-kiosk` skill owns
+  the unattended-terminal flow; it can call this engine.
+- **Seated venues with seat maps, or ticket resale** — different domain.
+
+## Architecture
+
+```
+ routes (register · status/cancel/resume · staff check-in/no-show/waive/cancel · admin CRUD/cancel)
+   │ parse → authorize (host.ts: session, staff + locationId) → engine
+   ▼
+ engine.transition ── store.mutateParticipant (ONE tx) ── applyAction (pure) ── seatDelta
+   │ commit
+   ▼ effectsOf(before, after) → Stripe: expire · cancel hold · capture · refund │ email
+   ▲                                   │ success → confirming action; failure → RETRY_*
+ webhook (claim evt id) ───────────────┘
+ tick every 5 min: nextActionAt ≤ now → EXPIRE_PENDING · PLACE_HOLD · SETTLE · RETRY_*
+```
+
+## Critical facts
+
+1. **Holds expire.** ~7 days when the customer authorizes in Checkout, only
+   **~4 d 18 h for a Visa hold the server places later**. Events settling
+   within 6 days hold in Checkout; later ones save the card and the tick holds
+   4 days before settlement.
+2. **`payment_intent.payment_failed` is not the end.** Checkout stays open
+   after a decline; only `checkout.session.expired` ends a pending seat.
+3. **Free means free in every currency.** A missing or zero price in the
+   chosen currency on a paid event is a refusal, never a free ticket.
+4. **Refunds use the amount frozen at registration**, never today's price.
+5. **Money that arrives for a released seat goes back.** The seat is never
+   resurrected — it may already be resold.
+6. **A repeated action returns the same object.** That single rule makes
+   webhooks, double taps and cron retries safe.
+
+## Hard rules
+
+> **Never call Stripe inside a database transaction, and never write state
+> after calling Stripe without a durable intent first.** Transaction callbacks
+> re-run; failed writes after a capture lose the record of money moved.
+
+> **Never take identity from the request body.** Customer from the session,
+> guests by HMAC manage link, staff by the host guard with location scope on
+> every `[eventId]` route.
+
+> **Never capture before settlement.** Check-in must be possible first; a hold
+> that would lapse is renewed, or released — never captured early.
+
+> **Never let a status flip cancel an event.** Cancelling is an action that
+> refunds and releases everyone.
+
+> **Never swallow a webhook error into a 200.** Release the claim, answer 500,
+> let Stripe retry.
+
+## Quick start
+
+1. Model: [data-model.md](references/data-model.md) — rename table, types, seat accounting.
+2. Pure core: [money-and-time.md](references/money-and-time.md), then
+   [participant-lifecycle.md](references/participant-lifecycle.md).
+3. Store: [firestore.md](references/firestore.md) or [postgres.md](references/postgres.md).
+4. Engine and flows: [engine.md](references/engine.md), [registration.md](references/registration.md).
+5. Stripe: [stripe.md](references/stripe.md); deposits: [no-show-deposits.md](references/no-show-deposits.md).
+6. Routes: [api-routes.md](references/api-routes.md); screens: [ui.md](references/ui.md).
+7. Tests: [testing.md](references/testing.md), [testing-lifecycles.md](references/testing-lifecycles.md).
+8. Go live: [operations.md](references/operations.md).
+
+## Adaptation Contract
+
+| Seam | This skill ships | The host supplies |
+|---|---|---|
+| Domain entities | event / participant / ticket / deposit + rename table | its vocabulary (class, session, attendee…) |
+| Tenant scope | `locationId` on events and participants, checked per route | its venue / site / workspace model |
+| Auth | `getCustomer`, `getStaff`, `canAccessLocation` in `host.ts` | Clerk, NextAuth, Supabase, Firebase… |
+| Data access | `EventStore` port; Firestore and Postgres implementations | its SDK or ORM |
+| Payments | `StripeGateway` behind `PaymentGateway`; webhook handler | Stripe keys; optional shared webhook |
+| Stored credit | optional `BalanceLedger` port | its wallet, or `null` |
+| Notifications | `Notifier` port, 11 notification kinds | its email/SMS provider and templates |
+| Background work | one tick, every 5 minutes | its cron / scheduler |
+| Currency | any ISO-4217, `usd` default, optional allow-list | its default and restriction |
+| UI primitives | structure, states, copy rules | buttons, dialogs, tables, toasts |
+| Styling | layout intent only | its design system |
+| Strings | `events.*` keys and error codes | its i18n files, every locale |
+| Validation | dependency-free parsers | its schema library, if preferred |
+
+## Reference directory
+
+| Scenario | Trigger keywords | Reference |
+|---|---|---|
+| Types, rename, seat counting | Event, Participant, seatsTaken, capacity, rename | [data-model.md](references/data-model.md) |
+| Currencies, prices, time zones | ISO-4217, zero-decimal, ISK, KWD, USD default, DST, IANA, todayIn | [money-and-time.md](references/money-and-time.md) |
+| States, actions, effects, due work | applyAction, PENDING, HELD, RELEASING, CAPTURING, nextActionAt | [participant-lifecycle.md](references/participant-lifecycle.md) |
+| Deposits, holds, settlement, tick | no-show, capture_before, manual capture, off_session, SetupIntent, waive | [no-show-deposits.md](references/no-show-deposits.md) |
+| Checkout, webhooks, test cards | checkout.session.completed, expired, charge.refunded, idempotency, whsec | [stripe.md](references/stripe.md) |
+| Register, cancel, refund flows | register, capacity, guest link, late cancel, refund, cancel event | [registration.md](references/registration.md) |
+| Engine wiring and ports | createEventsEngine, EventStore, BalanceLedger, Notifier | [engine.md](references/engine.md) |
+| Firestore store | collection group, transaction, rules, indexes | [firestore.md](references/firestore.md) |
+| Postgres store | schema, FOR UPDATE, jsonb, RLS, Supabase | [postgres.md](references/postgres.md) |
+| Routes, auth, errors | route handler, requireStaffForEvent, CRON_SECRET, 409 | [api-routes.md](references/api-routes.md) |
+| Screens | registration dialog, check-in screen, admin form, manage page | [ui.md](references/ui.md) |
+| Tests | vitest, fixtures, fake gateway, regression | [testing.md](references/testing.md), [testing-lifecycles.md](references/testing-lifecycles.md) |
+| Env, cron, monitoring, emails | env vars, vercel cron, reconciliation, go-live | [operations.md](references/operations.md) |
+| Origin, defects fixed, additions | audit, provenance, fix order | [provenance.md](references/provenance.md) |
