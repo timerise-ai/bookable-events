@@ -24,13 +24,20 @@ Sibling directories under `../` (`booking-kiosk`, `stripe-connect-subscriptions`
 ## Verifying the templates
 
 Every TypeScript block in `references/` is a complete file whose first line is
-a `// path` comment. To verify after an edit, extract each block to that path
-in a scratch project, symlink a `node_modules` that has `stripe`,
-`firebase-admin`, `next` and `vitest`, and run:
+a `// path — description` comment (the path is everything before ` — `). To
+verify after an edit, extract each block to that path in a scratch project
+(use the scratchpad, never this repo), symlink a `node_modules` that has
+`stripe`, `firebase-admin`, `next` and `vitest`, and run:
 
 ```bash
 tsc --noEmit -p . && tsc --noEmit -p . --noUncheckedIndexedAccess && vitest run
+vitest run test/engine.test.ts        # one suite
+vitest run -t 'name of the test'      # one test
 ```
+
+No `tsconfig.json` ships with the templates. The scratch one should be `strict`
+and must map the `@/` alias the imports use (`"paths": { "@/*": ["./*"] }`);
+`vitest.config.ts` (in `testing.md`) maps the same alias for the tests.
 
 Both type-checks must be clean and all 47 tests must pass. Blocks that need a
 package the scratch project lacks (the `pg` client in `postgres.md`) and the
