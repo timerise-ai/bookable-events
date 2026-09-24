@@ -1,25 +1,25 @@
 # Participant lifecycle
 
-Every change to a participant — a webhook, a staff tap, a cron decision, a
-customer cancel — is an **action** fed to one pure function, `applyAction`. The
+Every change to a participant (a webhook, a staff tap, a cron decision, a
+customer cancel) is an **action** fed to one pure function, `applyAction`. The
 engine runs it inside a database transaction, diffs before/after into
 **effects**, commits, and only then talks to Stripe or sends email.
 
 ```
  request / webhook / tick
-        │
-        ▼
- store.mutateParticipant(tx) ──► applyAction(p, action, now)   pure, may throw
-        │                              │
-        │                     same object? → no write, no effects (idempotent)
-        ▼                              ▼
-   commit (+ seatDelta)        scheduleNextAction → nextAction / nextActionAt
-        │
-        ▼
- effectsOf(before, after) ──► Stripe cancel / capture / refund / expire, email
-        │                              │
-        │                      success → follow-up action (HOLD_RELEASED …)
-        ▼                      failure → nothing; RETRY_* already scheduled
+        |
+        v
+ store.mutateParticipant(tx) --> applyAction(p, action, now)   pure, may throw
+        |                              |
+        |                     same object? -> no write, no effects (idempotent)
+        v                              v
+   commit (+ seatDelta)        scheduleNextAction -> nextAction / nextActionAt
+        |
+        v
+ effectsOf(before, after) --> Stripe cancel / capture / refund / expire, email
+        |                              |
+        |                      success -> follow-up action (HOLD_RELEASED ...)
+        v                      failure -> nothing; RETRY_* already scheduled
 ```
 
 **Transaction first, Stripe second** is the rule. Doing it the other way round
@@ -34,31 +34,31 @@ Stripe confirms.
 
 ```
               TICKET_PAID / BALANCE_DEBITED / HOLD_AUTHORIZED / CARD_SAVED
-   PENDING ─────────────────────────────────────────────────────► CONFIRMED
-     │  CHECKOUT_EXPIRED → EXPIRED                                   │
-     │  CANCEL           → CANCELLED                                 │ CANCEL refund=full, paid → REFUND_PENDING → REFUNDED
-     ▼                                                               │ CANCEL refund=none / free → CANCELLED
-  (seat released)                                                    │ GIVE_UP_HOLD → CANCELLED
-                                                                     │ EXTERNAL_REFUND (full) → REFUNDED
+   PENDING -----------------------------------------------------> CONFIRMED
+     |  CHECKOUT_EXPIRED -> EXPIRED                                  |
+     |  CANCEL           -> CANCELLED                                | CANCEL refund=full, paid -> REFUND_PENDING -> REFUNDED
+     v                                                               | CANCEL refund=none / free -> CANCELLED
+  (seat released)                                                    | GIVE_UP_HOLD -> CANCELLED
+                                                                     | EXTERNAL_REFUND (full) -> REFUNDED
 ```
 
 ### Deposit (free events with a deposit)
 
 ```
- AWAITING_CARD ──CARD_SAVED──► CARD_SAVED ──tick PLACE_HOLD──► HELD
-      │                            │  HOLD_NEEDS_ACTION → HOLD_REQUIRES_ACTION ─┐
-      │ HOLD_AUTHORIZED (Checkout) │  HOLD_DECLINED     → HOLD_FAILED ──────────┤ customer resumes
-      └────────────────────────────┴──────────────────────────────► HELD ◄──────┘ via new Checkout
-                                                                    │
-    CHECK_IN all / WAIVE / early CANCEL / SETTLE nobody missing ──► RELEASING ─► RELEASED
-    SETTLE some missing / late CANCEL                           ──► CAPTURING ─► CAPTURED
-    authorization lapses (Stripe cancels the intent)             ──────────────► RELEASED
-    HOLD_* at cutoff → GIVE_UP_HOLD → RELEASED (seat released too)
+ AWAITING_CARD --CARD_SAVED--> CARD_SAVED --tick PLACE_HOLD--> HELD
+      |                            |  HOLD_NEEDS_ACTION -> HOLD_REQUIRES_ACTION -+
+      | HOLD_AUTHORIZED (Checkout) |  HOLD_DECLINED     -> HOLD_FAILED ----------+ customer resumes
+      +----------------------------+------------------------------> HELD <-------+ via new Checkout
+                                                                    |
+    CHECK_IN all / WAIVE / early CANCEL / SETTLE nobody missing --> RELEASING -> RELEASED
+    SETTLE some missing / late CANCEL                           --> CAPTURING -> CAPTURED
+    authorization lapses (Stripe cancels the intent)             --------------> RELEASED
+    HOLD_* at cutoff -> GIVE_UP_HOLD -> RELEASED (seat released too)
 ```
 
 ### Attendance
 
-`UNKNOWN → ARRIVED (count 1..ticketCount)` on check-in; `→ NO_SHOW` when staff
+`UNKNOWN` becomes `ARRIVED` (count `1..ticketCount`) on check-in, and `NO_SHOW` when staff
 mark it or when settlement finds nobody arrived. Check-in can be corrected
 (count changed) until settlement.
 
@@ -69,17 +69,17 @@ mark it or when settlement finds nobody arrived. Check-in can be corrected
 | A repeated action returns **the same object** | Redelivered webhooks and double taps become no-ops. Returning a copy writes again and re-sends every email. |
 | Money for a seat that is gone raises `LatePaymentError` | The webhook refunds / cancels it. Silently confirming would push `seatsTaken` past capacity; silently ignoring keeps the money with no seat. |
 | `HOLD_RELEASED` / `HOLD_CAPTURED` carry the `paymentIntentId` and ignore a mismatch | After a renewal or an abandoned 3DS attempt there are two intents; the old one's `canceled` event must not release the live hold. |
-| Partial check-in keeps the hold `HELD` | Settlement captures `amountPerTicket × missing`. Releasing on the first arrival would let a group of four send one person. |
+| Partial check-in keeps the hold `HELD` | Settlement captures `amountPerTicket x missing`. Releasing on the first arrival would let a group of four send one person. |
 | Late cancel = no-show | Otherwise the cheapest no-show is "cancel from the car park". The deadline is `cancelDeadlineHours` before the start. |
 | No `CANCEL` after `ARRIVED` | A present customer cannot refund themselves; staff can still waive. |
 | `payment_intent.payment_failed` is not an action | Stripe sends it for each declined attempt while Checkout is still open. Treating it as terminal is how a customer ends up charged with no seat. Only `checkout.session.expired` ends a PENDING registration. |
 
 ```ts
-// lib/events/participant-machine.ts — every participant change goes through `applyAction`.
+// lib/events/participant-machine.ts: every participant change goes through `applyAction`.
 //
 // Pure: no I/O, no clock reads. The service runs it inside a DB transaction, diffs
 // before/after with `effectsOf`, commits, and only then calls Stripe. A repeated action
-// (webhook redelivery, double-clicked button) returns the SAME object — callers treat
+// (webhook redelivery, double-clicked button) returns the SAME object, and callers treat
 // reference equality as "nothing to do".
 import type { Actor, Participant, PaymentStatus } from './types';
 
@@ -255,7 +255,7 @@ export function applyAction(p: Participant, action: ParticipantAction, now: Date
     case 'HOLD_RELEASED': {
       // A superseded intent (renewed hold, abandoned 3DS attempt) must not touch the live one.
       if (action.paymentIntentId !== dep.paymentIntentId || dep.status === 'RELEASED') return p;
-      // HELD → RELEASED happens when the authorization lapses and Stripe cancels it.
+      // HELD to RELEASED happens when the authorization lapses and Stripe cancels it.
       if (dep.status !== 'RELEASING' && dep.status !== 'HELD' && dep.status !== 'HOLD_REQUIRES_ACTION') fail(p, action);
       return { ...p, deposit: { ...dep, status: 'RELEASED', lastError: action.reason ?? dep.lastError }, updatedAt: now };
     }
@@ -326,8 +326,8 @@ export function applyAction(p: Participant, action: ParticipantAction, now: Date
 
 `effectsOf(before, after)` is a pure diff. The engine executes it after commit;
 each successful Stripe call feeds a confirming action back in
-(`cancel_intent` → `HOLD_RELEASED`, `capture_intent` → `HOLD_CAPTURED`,
-`refund` → `REFUND_SUCCEEDED`). Stripe's own webhooks deliver the same
+(`cancel_intent` to `HOLD_RELEASED`, `capture_intent` to `HOLD_CAPTURED`,
+`refund` to `REFUND_SUCCEEDED`). Stripe's own webhooks deliver the same
 confirmations, so whichever arrives first wins and the other is a no-op.
 
 `scheduleNextAction` computes the only thing the background tick queries:
@@ -348,7 +348,7 @@ the race against the tick; when it does not (webhook lost, endpoint down), the
 tick retrieves the session and fulfils it itself.
 
 ```ts
-// lib/events/effects.ts — what must happen outside the database after a transition,
+// lib/events/effects.ts: what must happen outside the database after a transition,
 // and when the tick must look at this participant next. Both pure.
 import { settleDueAt, type DepositPolicy, type EventWindow, DEFAULT_DEPOSIT_POLICY } from './deposit-schedule';
 import type { NextAction, Participant } from './types';

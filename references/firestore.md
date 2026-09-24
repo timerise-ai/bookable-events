@@ -27,7 +27,7 @@ registrations".
 | A `where` + `orderBy` on a collection group needs an explicit index | Declared below. Without it `listDue` fails at runtime with a link to create it. |
 
 ```ts
-// lib/events/backends/firestore-store.ts — EventStore on Firestore (firebase-admin, server only).
+// lib/events/backends/firestore-store.ts: EventStore on Firestore (firebase-admin, server only).
 //
 // Layout:  events/{eventId}
 //          events/{eventId}/participants/{participantId}
@@ -124,7 +124,7 @@ export function createFirestoreEventStore(db: Firestore): EventStore {
       const eventRef = events.doc(eventId);
       const partRef = participants(eventId).doc(participantId);
       return db.runTransaction(async (tx) => {
-        // All reads before any write — a Firestore transaction rule.
+        // All reads before any write: a Firestore transaction rule.
         const [eventSnap, partSnap] = await Promise.all([tx.get(eventRef), tx.get(partRef)]);
         const event = readEvent(eventSnap);
         const before = readParticipant(partSnap);
@@ -215,7 +215,7 @@ match /events/{eventId} {
   allow write: if false;                       // server only, through the admin routes
 
   match /participants/{participantId} {
-    allow read, write: if false;               // server only — contains emails and Stripe ids
+    allow read, write: if false;               // server only; contains emails and Stripe ids
   }
 }
 match /stripeWebhookEvents/{id} {

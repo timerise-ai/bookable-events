@@ -1,4 +1,4 @@
-# Testing — lifecycles
+# Testing: lifecycles
 
 End-to-end scenarios over the engine, the webhook handler and the tick, using
 the in-memory store and fake gateway from [testing.md](testing.md). Each test
@@ -8,12 +8,12 @@ outcome.
 | Group | Covers |
 |---|---|
 | Hold placed in Checkout | release on full arrival, capture after grace (not before), partial capture, waiver, early vs late cancel, venue cancel, idempotent check-in |
-| Card saved, hold placed later | placement exactly at `holdDueAt` inside the Visa MIT window, decline → email → seat released at cutoff |
+| Card saved, hold placed later | placement exactly at `holdDueAt` inside the Visa MIT window, decline, then email, then seat released at cutoff |
 | Paid tickets | unpriced currency refused (**regression**), declined attempt keeps the seat (**regression**), refund of the frozen amount, late money refunded (**regression**), Stripe outage releases the seat, capacity, duplicate webhook |
 | Manage token | per-participant HMAC verification |
 
 ```ts
-// test/engine.test.ts — end-to-end lifecycles against the in-memory store and fake gateway.
+// test/engine.test.ts: end-to-end lifecycles against the in-memory store and fake gateway.
 import type Stripe from 'stripe';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createEventsEngine } from '@/lib/events/engine';
@@ -62,7 +62,7 @@ async function registerAndHold(s: ReturnType<typeof setup>, tickets: number) {
   return { id: r.participantId, pi };
 }
 
-describe('deposit — hold placed in Checkout (event ≤ 6 days away)', () => {
+describe('deposit: hold placed in Checkout (event at most 6 days away)', () => {
   let s: ReturnType<typeof setup>;
   beforeEach(() => { s = setup(); });
 
@@ -80,7 +80,7 @@ describe('deposit — hold placed in Checkout (event ≤ 6 days away)', () => {
     expect(s.notifier.sent).toEqual(expect.arrayContaining([`deposit_held:${id}`, `deposit_released:${id}`]));
   });
 
-  it('captures a no-show after the grace period — and not before', async () => {
+  it('captures a no-show after the grace period, and not before', async () => {
     const { id, pi } = await registerAndHold(s, 2);
     s.clock.t = END + 1 * H;
     await s.tick();
@@ -143,7 +143,7 @@ describe('deposit — hold placed in Checkout (event ≤ 6 days away)', () => {
   });
 });
 
-describe('deposit — card saved, hold placed later (event > 6 days away)', () => {
+describe('deposit: card saved, hold placed later (event > 6 days away)', () => {
   it('saves the card, then the tick places the hold inside the Visa MIT window', async () => {
     const s = setup({}, START - 20 * D);
     const r = await s.engine.register({ ...guest, ticketCount: 1 });
@@ -229,7 +229,7 @@ describe('paid tickets', () => {
     const s = setup(paidEvent);
     const r = await s.engine.register({ ...guest, ticketCount: 1 });
     s.clock.t += 36 * 60_000;
-    await s.tick(); // session reported expired → seat released
+    await s.tick(); // session reported expired, so the seat is released
     expect(s.part(r.participantId).payment.status).toBe('EXPIRED');
     expect(s.seats()).toBe(0);
 

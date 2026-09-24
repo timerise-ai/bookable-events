@@ -3,7 +3,7 @@
 Reference `EventStore` on Postgres (Neon, Supabase, RDS, plain Postgres). It
 talks to a two-method `SqlClient`, so it sits on `pg`, `postgres.js` or a
 pooler without changes. A host that standardised on Drizzle or Prisma ports the
-same queries to its ORM — the transaction boundaries and locks are what matter.
+same queries to its ORM: the transaction boundaries and locks are what matter.
 
 ## Schema
 
@@ -49,7 +49,7 @@ CREATE INDEX event_participants_customer ON event_participants (customer_id, reg
 CREATE INDEX event_participants_location ON event_participants (location_id, payment_status);
 
 CREATE TABLE stripe_webhook_events (
-  id         text PRIMARY KEY,                       -- evt_…
+  id         text PRIMARY KEY,                       -- evt_...
   claimed_at timestamptz NOT NULL,
   done_at    timestamptz
 );
@@ -59,7 +59,7 @@ CREATE TABLE stripe_webhook_events (
 |---|---|
 | `CHECK (seats_taken <= capacity)` | A second line of defence: a bug that over-sells fails the transaction instead of the venue. |
 | Participant as `jsonb` + indexed copies | The state machine reads and writes the participant whole; the copied columns exist only for the queries (due work, lists, profiles, reporting). `upsertParticipant` writes both in one statement so they cannot drift. |
-| `SELECT … FOR UPDATE` on the event row in both transactions | Serializes registrations and seat-changing transitions per event. Lock order is always event → participant, so the two paths cannot deadlock. |
+| `SELECT ... FOR UPDATE` on the event row in both transactions | Serializes registrations and seat-changing transitions per event. Lock order is always event, then participant, so the two paths cannot deadlock. |
 | Partial index on `next_action_at` | Most participants are terminal (`null`); the tick's index stays small. |
 
 Locking the event row on every participant write serializes one event's
@@ -84,7 +84,7 @@ ALTER TABLE stripe_webhook_events ENABLE ROW LEVEL SECURITY;
 ## Implementation
 
 ```ts
-// lib/events/backends/postgres-store.ts — EventStore on Postgres through a minimal client
+// lib/events/backends/postgres-store.ts: EventStore on Postgres through a minimal client
 // interface, so it drops onto node-postgres, postgres.js, Neon or Supabase's pooler alike.
 import { seatDelta } from '../participant-machine';
 import { RegistrationError, type EventStore, type MutationResult } from '../ports';
@@ -92,7 +92,7 @@ import type { EventRecord, Participant } from '../types';
 
 export interface SqlClient {
   query<R>(text: string, params?: unknown[]): Promise<{ rows: R[] }>;
-  /** BEGIN … COMMIT on one connection; ROLLBACK if fn throws. */
+  /** BEGIN ... COMMIT on one connection; ROLLBACK if fn throws. */
   transaction<T>(fn: (tx: SqlClient) => Promise<T>): Promise<T>;
 }
 
@@ -270,7 +270,7 @@ export function createPostgresEventStore(sql: SqlClient, newId: () => string): E
 A `SqlClient` over `pg`:
 
 ```ts
-// lib/events/backends/pg-client.ts — requires `pg` and `@types/pg`
+// lib/events/backends/pg-client.ts: requires `pg` and `@types/pg`
 import { Pool, type PoolClient } from 'pg';
 import type { SqlClient } from '@/lib/events/backends/postgres-store';
 

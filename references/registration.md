@@ -7,20 +7,20 @@ in [engine.md](engine.md); the request parsing is at the bottom of this file.
 
 ```
  POST /api/events/{eventId}/register  { fullName, email, phone?, ticketCount, currency?, paymentMethod? }
-   │ parseRegistrationBody            → 400 { field, code }
-   │ customer = getCustomer(req)      → identity from the session ONLY
-   ▼
+   | parseRegistrationBody            -> 400 { field, code }
+   | customer = getCustomer(req)      -> identity from the session ONLY
+   v
  engine.register
-   1 event exists, not deleted, published, not started        → 404 / 409
-   2 resolveCharge(event, currency, tickets, policy)          → 400 currency_*
+   1 event exists, not deleted, published, not started        -> 404 / 409
+   2 resolveCharge(event, currency, tickets, policy)          -> 400 currency_*
    3 build participant (free: CONFIRMED; else PENDING)
-   4 store.insertParticipant — capacity checked IN the tx      → 409 no_spots
+   4 store.insertParticipant: capacity checked IN the tx       -> 409 no_spots
    5 branch:
-       free, no deposit → email "registered"          → { checkoutUrl: null }
-       paid + balance   → ledger.debit(ref event:<id>) → CONFIRMED or CANCEL + 402
-       paid + card      → ticket Checkout (30 min)     → { checkoutUrl }
-       deposit          → hold or setup Checkout        → { checkoutUrl }
-   6 Checkout creation throws → CANCEL (seat back now) → 502 payment_unavailable
+       free, no deposit -> email "registered"          -> { checkoutUrl: null }
+       paid + balance   -> ledger.debit(ref event:<id>) -> CONFIRMED or CANCEL + 402
+       paid + card      -> ticket Checkout (30 min)     -> { checkoutUrl }
+       deposit          -> hold or setup Checkout        -> { checkoutUrl }
+   6 Checkout creation throws -> CANCEL (seat back now) -> 502 payment_unavailable
 ```
 
 | Guard | Why it is where it is |
@@ -28,8 +28,8 @@ in [engine.md](engine.md); the request parsing is at the bottom of this file.
 | Capacity inside the insert transaction | A check before the transaction is advisory only; two requests can both see "1 left". |
 | Seat taken **before** Checkout, released on failure | The alternative (Checkout first) lets two customers pay for the last seat. Releasing immediately on a Stripe error avoids a phantom seat for 30 minutes. |
 | `event_started` check | A still-`published` event from yesterday must not take registrations. |
-| `resolveCharge` rejects unpriced currencies | See [money-and-time.md](money-and-time.md) — the "free by currency switch" defect. |
-| No `customerId` / `playerId` from the body | A forged id attaches the registration — and its refund — to someone else's account. |
+| `resolveCharge` rejects unpriced currencies | See [money-and-time.md](money-and-time.md) for the "free by currency switch" defect. |
+| No `customerId` / `playerId` from the body | A forged id attaches the registration (and its refund) to someone else's account. |
 | Max 10 tickets per registration (configurable) | Bounds one request's effect on capacity and on a deposit total. |
 
 **Guests** can register. They manage the seat through the link in every email:
@@ -40,13 +40,13 @@ time. Signed-in customers are recognised by `customerId` instead.
 **Balance payments** (optional `BalanceLedger`) debit with ref
 `event:<participantId>`. If the process dies between debit and confirm, the
 tick finds the PENDING participant, asks `ledger.hasEntry(ref)` and confirms or
-expires accordingly — the debit and the seat can never disagree for longer than
+expires accordingly, so the debit and the seat can never disagree for longer than
 one tick.
 
-**Pay again.** `POST …/participants/{id}/resume` bumps `checkoutAttempt`,
+**Pay again.** `POST .../participants/{id}/resume` bumps `checkoutAttempt`,
 expires the previous session and returns a new Checkout URL. It works for a
 `PENDING` registration and for a deposit whose off-session hold failed
-(`HOLD_FAILED`, `HOLD_REQUIRES_ACTION`) — in which case the new session is a
+(`HOLD_FAILED`, `HOLD_REQUIRES_ACTION`), in which case the new session is a
 hold Checkout, and completing it supersedes the failed intent.
 
 ## Cancellation
@@ -67,16 +67,16 @@ with nobody refunded.
 |---|---|---|
 | Card (Stripe) | `refunds.create({ payment_intent, amount })`, idempotency key `refund:<participantId>` | Synchronously if Stripe says `succeeded`, else on `charge.refunded` |
 | Balance | `ledger.credit(ref refund:<participantId>)` | Synchronously |
-| Free | — | — |
+| Free | None | None |
 
-The amount is always `payment.amount − payment.refundedAmount`: what this
+The amount is always `payment.amount - payment.refundedAmount`: what this
 participant was charged, frozen at registration. A refund initiated in the
 Stripe Dashboard is picked up by `charge.refunded` and recorded as
 `EXTERNAL_REFUND`; a full one releases the seat.
 
 Refunding to the original card is the default. A host that prefers store
 credit for Stripe-paid tickets swaps the `refund` effect's STRIPE branch for a
-`ledger.credit` — keep the idempotency ref, and keep refunding guests (who have
+`ledger.credit`, but keep the idempotency ref, and keep refunding guests (who have
 no wallet) to their card.
 
 ## Request parsing
@@ -86,7 +86,7 @@ no wallet) to their card.
 from a request body, and `capacity` below the current `seatsTaken` is refused.
 
 ```ts
-// lib/events/input.ts — request bodies → typed values. Whitelists: unknown keys are dropped,
+// lib/events/input.ts: request bodies to typed values. Whitelists: unknown keys are dropped,
 // so an admin PUT can never overwrite seatsTaken, deletedAt, locationId or createdAt.
 import { assertChargeableAmount, normalizeCurrency } from './currency';
 import { isFreeEvent } from './pricing';

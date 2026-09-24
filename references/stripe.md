@@ -20,7 +20,7 @@ other payment flows.
 
 | Choice | Reason |
 |---|---|
-| `expires_at` = 30 min (Stripe's minimum) | Stripe's default is 24 h. An unpaid seat held for a day is a seat nobody can buy; the source's 30-minute cleanup cron fighting a 24-hour session is how "pay again" links died. |
+| `expires_at` = 30 min (Stripe's minimum) | Stripe's default is 24 h. An unpaid seat held for a day is a seat nobody can buy; the earlier implementation's 30-minute cleanup cron fighting a 24-hour session is how "pay again" links died. |
 | Idempotency key `checkout:<kind>:<participantId>:<attempt>` | A retried request returns the same session; "pay again" bumps `attempt` for a new one. |
 | One Stripe Customer per participant | Looking customers up by email can return someone else's customer, with their saved cards, for a shared or mistyped address. |
 | No hard-coded `payment_method_types` on tickets | Dynamic payment methods follow the Dashboard. Hard-coding a local method (say, one that only works in one currency) breaks every other currency at session creation. |
@@ -30,17 +30,17 @@ other payment flows.
 
 | Event | Action |
 |---|---|
-| `checkout.session.completed`, `…async_payment_succeeded` | Verify, then `TICKET_PAID` / `HOLD_AUTHORIZED` / `CARD_SAVED`. Ticket: `payment_status === 'paid'` **and** `amount_total` + `currency` equal the frozen amount, or refund. |
-| `checkout.session.expired`, `…async_payment_failed` | `CHECKOUT_EXPIRED` — only if it is the participant's **current** session. |
+| `checkout.session.completed`, `checkout.session.async_payment_succeeded` | Verify, then `TICKET_PAID` / `HOLD_AUTHORIZED` / `CARD_SAVED`. Ticket: `payment_status === 'paid'` **and** `amount_total` + `currency` equal the frozen amount, or refund. |
+| `checkout.session.expired`, `checkout.session.async_payment_failed` | `CHECKOUT_EXPIRED`, only if it is the participant's **current** session. |
 | `payment_intent.amount_capturable_updated` | `HOLD_AUTHORIZED` (a hold that became capturable after the session completed). |
-| `payment_intent.canceled` (deposit) | `HOLD_RELEASED` for that intent id; `automatic` → `lastError: 'authorization_expired'`. |
+| `payment_intent.canceled` (deposit) | `HOLD_RELEASED` for that intent id; `automatic` sets `lastError: 'authorization_expired'`. |
 | `payment_intent.succeeded` (deposit) | `HOLD_CAPTURED` with `amount_received`. |
 | `charge.refunded` (ticket) | `REFUND_SUCCEEDED`, or `EXTERNAL_REFUND` for a refund issued in the Dashboard (a full refund releases the seat). Metadata is read from the PaymentIntent. |
 | `payment_intent.payment_failed` | **Ignored on purpose.** Fired per declined attempt while Checkout is still open. |
 
 Subscribe the endpoint to the eight handled types (everything above except `payment_intent.payment_failed`).
 
-**Idempotency, three layers.** (1) `claimWebhookEvent` records the event id —
+**Idempotency, three layers.** (1) `claimWebhookEvent` records the event id:
 a completed id is skipped; a claim older than 10 minutes without completion is
 reclaimable, because the process holding it died. (2) Every transition is a
 no-op when already applied. (3) Every Stripe write carries an idempotency key.
@@ -51,12 +51,12 @@ permanently lost payment.
 **Late money.** If a completion arrives for a participant whose seat is already
 gone (expired, cancelled), the machine raises `LatePaymentError` and the handler
 gives the money back: refund for a ticket, cancel for a hold. It never
-resurrects the seat — capacity may already be resold.
+resurrects the seat, since capacity may already be resold.
 
 ```ts
-// lib/events/webhook.ts — Stripe → participant transitions. Every handler is idempotent;
+// lib/events/webhook.ts: Stripe events to participant transitions. Every handler is idempotent;
 // the event-id ledger only saves work. A thrown error releases the claim and the route
-// answers 500 so Stripe redelivers — never swallow a failure into a 200.
+// answers 500 so Stripe redelivers. Never swallow a failure into a 200.
 import type Stripe from 'stripe';
 import { fromStripeAmount, toStripeAmount } from './currency';
 import type { EventsEngine } from './engine';
@@ -79,7 +79,7 @@ export function createWebhookHandler(engine: EventsEngine) {
   /** Shared by the webhook and the tick's reconcile path. */
   async function fulfilCheckout(session: Stripe.Checkout.Session): Promise<void> {
     const ref = refOf(session.metadata);
-    if (!ref) return; // not ours — another module owns it
+    if (!ref) return; // not ours; another module owns it
     const p = await store.getParticipant(ref.eventId, ref.participantId);
     if (!p) throw new Error(`checkout ${session.id} for unknown participant ${ref.participantId}`);
 
@@ -107,7 +107,7 @@ export function createWebhookHandler(engine: EventsEngine) {
       return;
     }
 
-    // event_deposit_setup — webhook payloads carry ids only, so read the SetupIntent itself.
+    // event_deposit_setup: webhook payloads carry ids only, so read the SetupIntent itself.
     const siId = typeof session.setup_intent === 'string' ? session.setup_intent : session.setup_intent?.id;
     if (!siId) return;
     const si = await gateway.retrieveSetupIntent(siId);
@@ -164,7 +164,7 @@ export function createWebhookHandler(engine: EventsEngine) {
         const ref = refOf(s.metadata);
         if (!ref) return;
         const p = await store.getParticipant(ref.eventId, ref.participantId);
-        // Only the CURRENT session expiring releases the seat — "pay again" supersedes old ones.
+        // Only the CURRENT session expiring releases the seat; "pay again" supersedes old ones.
         if (!p || (p.payment.checkoutSessionId !== s.id && p.deposit.checkoutSessionId !== s.id)) return;
         if (p.payment.status === 'PENDING') await engine.transition(p.eventId, p.id, { type: 'CHECKOUT_EXPIRED' });
         return;
@@ -231,7 +231,7 @@ export type WebhookHandler = ReturnType<typeof createWebhookHandler>;
 ## The gateway
 
 ```ts
-// lib/events/stripe-gateway.ts — every Stripe call the module makes, in one place.
+// lib/events/stripe-gateway.ts: every Stripe call the module makes, in one place.
 // Amounts in/out are STORED amounts; conversion to Stripe units happens only here.
 import Stripe from 'stripe';
 import { fromStripeAmount, toStripeAmount } from './currency';
@@ -281,7 +281,7 @@ export class StripeGateway {
   constructor(private readonly stripe: Stripe) {}
 
   async createCustomer(email: string, name: string, participantId: string): Promise<string> {
-    // One customer per participant: never look customers up by email — that can return
+    // One customer per participant: never look customers up by email, since that can return
     // someone else's customer (and their saved cards) for a shared or typo'd address.
     const c = await this.stripe.customers.create(
       { email, name, metadata: { participantId } },
@@ -432,7 +432,7 @@ export class StripeGateway {
   async captureIntent(paymentIntentId: string, amount: number, currency: CurrencyCode): Promise<number | 'expired'> {
     const pi = await this.stripe.paymentIntents.retrieve(paymentIntentId);
     if (pi.status === 'succeeded') return fromStripeAmount(pi.amount_received, currency);
-    if (pi.status === 'canceled') return 'expired'; // authorization lapsed — nothing to take
+    if (pi.status === 'canceled') return 'expired'; // authorization lapsed, nothing to take
     const captured = await this.stripe.paymentIntents.capture(
       paymentIntentId,
       { amount_to_capture: toStripeAmount(amount, currency) },
@@ -469,24 +469,24 @@ export class StripeGateway {
 Use a Stripe sandbox and the Stripe CLI:
 
 ```bash
-stripe listen --forward-to localhost:3000/api/stripe/webhook   # prints whsec_… → STRIPE_WEBHOOK_SECRET
+stripe listen --forward-to localhost:3000/api/stripe/webhook   # prints whsec_... for STRIPE_WEBHOOK_SECRET
 ```
 
 | # | Do | Card | Expect |
 |---|---|---|---|
 | 1 | Register 2 tickets for a paid event, pay | `4242 4242 4242 4242` | participant `CONFIRMED`, `seatsTaken` +2 |
-| 2 | Register, open Checkout, pay with the decline card, then retry with the good card | `4000 0000 0000 9995`, then `4242…` | still `PENDING` after the decline, `CONFIRMED` after the retry |
-| 3 | Register, close the Checkout tab, wait 35 min (or lower `expires_at` in dev) and run the tick | — | `EXPIRED`, seat released, `expired` email |
-| 4 | Free event with deposit, event in 2 days: register, authorize | `4242…` | Dashboard shows an **uncaptured** payment; participant `HELD` |
-| 5 | Staff check-in for all tickets | — | Dashboard payment **canceled**; participant `RELEASED` |
-| 6 | Repeat 4, move the clock (or event) so end + 2 h has passed, run the tick | — | Dashboard payment **captured**; `CAPTURED`, `NO_SHOW` |
-| 7 | Free event with deposit, event in 20 days: register | `4242…` | Checkout in setup mode; `CARD_SAVED`, `nextAction: PLACE_HOLD` |
+| 2 | Register, open Checkout, pay with the decline card, then retry with the good card | `4000 0000 0000 9995`, then `4242 4242 4242 4242` | still `PENDING` after the decline, `CONFIRMED` after the retry |
+| 3 | Register, close the Checkout tab, wait 35 min (or lower `expires_at` in dev) and run the tick | - | `EXPIRED`, seat released, `expired` email |
+| 4 | Free event with deposit, event in 2 days: register, authorize | `4242 4242 4242 4242` | Dashboard shows an **uncaptured** payment; participant `HELD` |
+| 5 | Staff check-in for all tickets | - | Dashboard payment **canceled**; participant `RELEASED` |
+| 6 | Repeat 4, move the clock (or event) so end + 2 h has passed, run the tick | - | Dashboard payment **captured**; `CAPTURED`, `NO_SHOW` |
+| 7 | Free event with deposit, event in 20 days: register | `4242 4242 4242 4242` | Checkout in setup mode; `CARD_SAVED`, `nextAction: PLACE_HOLD` |
 | 8 | Repeat 7 with a card that fails off-session, run the tick at `holdDueAt` | `4000 0027 6000 3184` (always authenticate) | `HOLD_REQUIRES_ACTION`, `hold_action_required` email |
 | 9 | Repeat 7 with a card that attaches but cannot be charged | `4000 0000 0000 0341` | `HOLD_FAILED`; at `holdCutoffAt` the seat is released |
-| 10 | Refund a confirmed ticket in the Dashboard | — | `charge.refunded` → `REFUNDED`, seat released |
-| 11 | `stripe events resend <evt_id>` for any processed event | — | handler returns `duplicate`; nothing changes |
+| 10 | Refund a confirmed ticket in the Dashboard | - | `charge.refunded`, then `REFUNDED`, seat released |
+| 11 | `stripe events resend <evt_id>` for any processed event | - | handler returns `duplicate`; nothing changes |
 
-`4000 0025 0000 3155` authenticates in Checkout and then succeeds off-session —
+`4000 0025 0000 3155` authenticates in Checkout and then succeeds off-session:
 the happy path for step 7's hold placement.
 
 ## Checklist
@@ -494,4 +494,4 @@ the happy path for step 7's hold placement.
 - [ ] `STRIPE_WEBHOOK_SECRET` set per environment; the route verifies the raw body.
 - [ ] Endpoint subscribed to the eight handled event types.
 - [ ] Card payments enabled in the Dashboard for every offered currency.
-- [ ] Walkthrough steps 1–11 pass in test mode before going live.
+- [ ] Walkthrough steps 1 to 11 pass in test mode before going live.

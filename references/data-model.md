@@ -2,7 +2,7 @@
 
 Two entities carry the whole module: an **Event** (a dated, capacity-limited
 occasion at one location) and a **Participant** (one registration for one or more
-tickets). Everything else — payment, deposit, attendance — lives on the
+tickets). Everything else (payment, deposit, attendance) lives on the
 participant as three sub-states that one pure state machine moves
 ([participant-lifecycle.md](participant-lifecycle.md)).
 
@@ -22,13 +22,13 @@ The templates always use these names. Rename once, at adoption time, everywhere.
 | check-in | Staff marks arrival | attendance, arrival, door scan |
 
 Do **not** rename Stripe terms (`PaymentIntent`, `capture_before`,
-`SetupIntent`, `Checkout Session`) or currency terms — they belong to the
+`SetupIntent`, `Checkout Session`) or currency terms; they belong to the
 platform, not the domain.
 
 ## Types
 
 ```ts
-// lib/events/types.ts — the neutral domain model. Every backend maps to this shape.
+// lib/events/types.ts: the neutral domain model. Every backend maps to this shape.
 
 /** Lowercase ISO-4217 code, always produced by `normalizeCurrency`. */
 export type CurrencyCode = string;
@@ -59,9 +59,9 @@ export interface EventRecord {
   timeZone: string;              // IANA, e.g. "America/New_York"
   capacity: number;
   seatsTaken: number;            // denormalized; only ever changed inside the participant transaction
-  ticketPrice: PriceMap;         // empty, or every value 0 → free event
+  ticketPrice: PriceMap;         // empty, or every value 0: a free event
   deposit: DepositConfig | null; // only allowed on free events (see validateEventInput)
-  cancelDeadlineHours: number;   // customer cancels later than this before start → late cancel
+  cancelDeadlineHours: number;   // customer cancels later than this before start is a late cancel
   status: EventStatus;
   deletedAt: Date | null;
   createdAt: Date;
@@ -82,8 +82,8 @@ export type DepositStatus =
   | 'NONE'                 // event has no deposit
   | 'AWAITING_CARD'        // Checkout (hold or setup) not completed yet
   | 'CARD_SAVED'           // card on file, hold placed later by the tick
-  | 'HOLD_REQUIRES_ACTION' // off-session hold needs the customer (3DS) — email sent
-  | 'HOLD_FAILED'          // off-session hold declined — email sent, retry link valid until cutoff
+  | 'HOLD_REQUIRES_ACTION' // off-session hold needs the customer (3DS), email sent
+  | 'HOLD_FAILED'          // off-session hold declined, email sent, retry link valid until cutoff
   | 'HELD'                 // authorization in place, capturable until captureBefore
   | 'RELEASING'            // cancel requested; the tick retries until Stripe confirms
   | 'RELEASED'             // hold cancelled (arrived, waived, early cancel, venue cancel)
@@ -97,9 +97,9 @@ export type AttendanceStatus = 'UNKNOWN' | 'ARRIVED' | 'NO_SHOW';
 export type Actor = 'customer' | 'staff' | 'admin' | 'system';
 
 export type NextAction =
-  | 'EXPIRE_PENDING'   // PENDING past expiresAt → reconcile with Stripe, then expire
-  | 'PLACE_HOLD'       // CARD_SAVED / HOLD_FAILED → off-session hold or give up at cutoff
-  | 'SETTLE'           // HELD after the event → capture no-shows / release arrivals
+  | 'EXPIRE_PENDING'   // PENDING past expiresAt: reconcile with Stripe, then expire
+  | 'PLACE_HOLD'       // CARD_SAVED / HOLD_FAILED: off-session hold or give up at cutoff
+  | 'SETTLE'           // HELD after the event: capture no-shows / release arrivals
   | 'RETRY_RELEASE'
   | 'RETRY_CAPTURE'
   | 'RETRY_REFUND';
@@ -107,7 +107,7 @@ export type NextAction =
 export interface ParticipantPayment {
   status: PaymentStatus;
   method: PaymentMethod;
-  amount: number;                 // what was charged, frozen at registration — refunds use this
+  amount: number;                 // what was charged, frozen at registration; refunds use this
   checkoutSessionId: string | null;
   paymentIntentId: string | null;
   expiresAt: Date | null;         // PENDING only: Checkout expires_at (+ grace in the tick)
@@ -118,14 +118,14 @@ export interface ParticipantDeposit {
   status: DepositStatus;
   strategy: DepositStrategy | null;
   amountPerTicket: number;
-  amount: number;                 // amountPerTicket × ticketCount
+  amount: number;                 // amountPerTicket x ticketCount
   stripeCustomerId: string | null;
   paymentMethodId: string | null;
   checkoutSessionId: string | null;
   paymentIntentId: string | null;
-  captureBefore: Date | null;     // from the charge — the authorization's real expiry
+  captureBefore: Date | null;     // from the charge: the authorization's real expiry
   holdDueAt: Date | null;         // save_card: when the tick places the hold
-  holdCutoffAt: Date | null;      // no hold by then → seat released
+  holdCutoffAt: Date | null;      // no hold by then, seat released
   settleDueAt: Date | null;       // when the tick captures / releases
   captureAmount: number;          // requested or captured amount
   waivedBy: string | null;
@@ -144,7 +144,7 @@ export interface Participant {
   id: string;
   eventId: string;
   locationId: string;             // copied from the event for scoped staff queries
-  customerId: string | null;      // from the verified session — never from the request body
+  customerId: string | null;      // from the verified session, never from the request body
   fullName: string;
   email: string;
   phone: string | null;
@@ -154,7 +154,7 @@ export interface Participant {
   payment: ParticipantPayment;
   deposit: ParticipantDeposit;
   attendance: ParticipantAttendance;
-  checkoutAttempt: number;        // bumped on "pay again" — part of the Checkout idempotency key
+  checkoutAttempt: number;        // bumped on "pay again"; part of the Checkout idempotency key
   nextAction: NextAction | null;
   nextActionAt: Date | null;
   registeredAt: Date;
@@ -170,7 +170,7 @@ export interface Participant {
 |---|---|
 | `date` + `timeStart` + `timeEnd` + `timeZone`, never a UTC timestamp | Staff type wall-clock times. A UTC instant stored at edit time silently moves by an hour when DST rules change or the admin's browser is in another zone. Convert with `eventWindowUtc` ([money-and-time.md](money-and-time.md)) at the moment you need an instant. |
 | `timeEnd <= timeStart` means "ends next day" | Evening events past midnight need no extra field. |
-| `seatsTaken` denormalized on the event | Capacity must be checked inside one transaction without scanning participants. It is written **only** by `insertParticipant` and `mutateParticipant` via `seatDelta` — never by an admin form. |
+| `seatsTaken` denormalized on the event | Capacity must be checked inside one transaction without scanning participants. It is written **only** by `insertParticipant` and `mutateParticipant` via `seatDelta`, never by an admin form. |
 | `payment.amount` frozen at registration | Refunds use what was charged, not today's price. Editing a price after sales must not change anyone's refund. |
 | `deposit.amount` frozen at registration | Same reason for holds and captures. |
 | `currency: null` only for free, deposit-less events | Every money-bearing registration records the currency it was charged in; no fallback currency is ever guessed later. |
@@ -189,10 +189,10 @@ A participant **holds seats** exactly while `payment.status` is `PENDING` or
 | Transition | Seat effect |
 |---|---|
 | insert (any status) | `+ticketCount` (capacity checked) |
-| `PENDING → CONFIRMED` | 0 |
-| `PENDING → EXPIRED / CANCELLED` | `−ticketCount` |
-| `CONFIRMED → CANCELLED / REFUND_PENDING / REFUNDED` | `−ticketCount` |
-| anything → `PENDING / CONFIRMED` from a released state | **never** — the machine raises `LatePaymentError` and the money goes back |
+| `PENDING` to `CONFIRMED` | 0 |
+| `PENDING` to `EXPIRED / CANCELLED` | `-ticketCount` |
+| `CONFIRMED` to `CANCELLED / REFUND_PENDING / REFUNDED` | `-ticketCount` |
+| anything to `PENDING / CONFIRMED` from a released state | **never**; the machine raises `LatePaymentError` and the money goes back |
 
 The last row is the rule that makes the counter trustworthy: no transition ever
 re-takes a seat without the capacity check, so `seatsTaken` can never exceed
@@ -211,7 +211,7 @@ re-takes a seat without the capacity check, so `seatsTaken` can never exceed
 | `lastError` | Off-session decline / 3DS / authorization lapse |
 
 `settleDueAt` is refreshed on every write while the deposit is `HELD`, so staff
-screens can show "no-shows charged at …". The tick reads the same value through
+screens can show "no-shows charged at ...". The tick reads the same value through
 `nextActionAt` ([no-show-deposits.md](no-show-deposits.md)).
 
 ## Storage

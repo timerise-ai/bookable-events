@@ -2,7 +2,7 @@
 
 A free event costs the venue nothing to book and everything to no-show: the
 seat was refused to someone who would have come. The fix is a **refundable card
-hold** — money reserved on the customer's card, never charged if they arrive,
+hold**: money reserved on the customer's card, never charged if they arrive,
 captured if they do not.
 
 This is Stripe's *place a hold on a payment method* (separate authorization and
@@ -14,8 +14,8 @@ captures.
 
 | Hold type | Who authorizes | Online validity (major networks) |
 |---|---|---|
-| Customer-initiated (CIT) — placed while the customer is in Checkout | Customer | ~7 days (Visa, Mastercard, Amex, Discover) |
-| Merchant-initiated (MIT) — placed later with a saved card, `off_session` | Server | 7 days, **Visa: ~4 days 18 hours** |
+| Customer-initiated (CIT), placed while the customer is in Checkout | Customer | ~7 days (Visa, Mastercard, Amex, Discover) |
+| Merchant-initiated (MIT), placed later with a saved card, `off_session` | Server | 7 days, **Visa: ~4 days 18 hours** |
 
 After expiry Stripe cancels the PaymentIntent (`payment_intent.canceled`,
 `cancellation_reason: 'automatic'`) and there is nothing left to capture. The
@@ -27,7 +27,7 @@ So one mechanism cannot cover an event three weeks away. The hybrid:
 | Event settles (end + grace) within | Strategy | What the customer does at signup | Hold placed |
 |---|---|---|---|
 | 6 days | `hold_now` | Authorizes the deposit in Checkout (`capture_method: 'manual'`) | Immediately (CIT, ~7 days) |
-| more than 6 days | `save_card` | Saves a card in Checkout (`mode: 'setup'`) | By the tick at settle − 4 days (MIT, fits Visa's window) |
+| more than 6 days | `save_card` | Saves a card in Checkout (`mode: 'setup'`) | By the tick at settle - 4 days (MIT, fits Visa's window) |
 
 Both paths are card-only: most wallets and bank-redirect methods cannot be
 authorized now and captured later, and SEPA/ACH debits cannot be held at all.
@@ -35,27 +35,27 @@ authorized now and captured later, and SEPA/ACH debits cannot be held at all.
 ## Timeline (defaults from `DEFAULT_DEPOSIT_POLICY`)
 
 ```
- signup ─────── holdDueAt ─────── holdCutoffAt ─── start ──── end ── +2 h settle
-   │  save_card    │ off-session hold   │ no hold yet?    │ check-in  │ capture no-shows,
-   │  (Checkout    │ placed; decline →  │ seat released,  │ releases  │ release everyone
-   │   setup)      │ email + retry link │ email sent      │ the hold  │ who arrived
-   └─ hold_now: hold placed here, in Checkout ──────────────────────────┘
-        settle − 4 d                start − 24 h                              ≤ capture_before − 6 h
+ signup ------- holdDueAt ------- holdCutoffAt --- start ---- end -- +2 h settle
+   |  save_card    | off-session hold   | no hold yet?    | check-in  | capture no-shows,
+   |  (Checkout    | placed; decline -> | seat released,  | releases  | release everyone
+   |   setup)      | email + retry link | email sent      | the hold  | who arrived
+   +- hold_now: hold placed here, in Checkout --------------------------+
+        settle - 4 d                start - 24 h                              <= capture_before - 6 h
 ```
 
 | Policy field | Default | Change it when |
 |---|---|---|
-| `customerHoldWindowMs` | 6 days | Never above 6 — leave a day of margin inside the 7-day CIT window. |
-| `merchantHoldWindowMs` | 4 days | Never above 4 — Visa MIT is 4 d 18 h. |
+| `customerHoldWindowMs` | 6 days | Never above 6: leave a day of margin inside the 7-day CIT window. |
+| `merchantHoldWindowMs` | 4 days | Never above 4, since Visa MIT is 4 d 18 h. |
 | `settleGraceMs` | 2 h | Staff need longer to finish check-ins after the event. |
 | `captureSafetyMs` | 6 h | Your tick runs less often than every 5 minutes. |
 | `holdCutoffBeforeStartMs` | 24 h | You want more time to re-offer released seats. |
 
 Multi-day events whose hold would lapse before settlement are **renewed**: at
-`capture_before − 6 h`, if the event has not ended, the tick places a fresh
+`capture_before - 6 h`, if the event has not ended, the tick places a fresh
 off-session hold with the card saved during Checkout (`setup_future_usage:
 'off_session'`) and cancels the old one. If renewal fails the deposit is
-released, not captured early — charging someone before they had the chance to
+released, not captured early: charging someone before they had the chance to
 arrive is worse than losing one deposit.
 
 ## What each outcome costs the customer
@@ -63,8 +63,8 @@ arrive is worse than losing one deposit.
 | Outcome | Deposit | Seat | Email |
 |---|---|---|---|
 | Arrives (all tickets) | Released at check-in | Used | `deposit_released` |
-| Arrives with 1 of 3 tickets | 2 × per-ticket captured at settlement | Used | `deposit_captured` |
-| Doesn't arrive | Captured in full at settlement | — | `deposit_captured` |
+| Arrives with 1 of 3 tickets | 2 x per-ticket captured at settlement | Used | `deposit_captured` |
+| Doesn't arrive | Captured in full at settlement | Unused | `deposit_captured` |
 | Cancels before the deadline | Released | Released | `cancelled`, `deposit_released` |
 | Cancels after the deadline | Captured in full, immediately | Released | `cancelled`, `deposit_captured` |
 | Venue cancels the event | Released | Released | `cancelled`, `deposit_released` |
@@ -91,11 +91,11 @@ venue's own policy and must be shown by the venue.
 ## Tick handlers for deposits
 
 `PLACE_HOLD`, `SETTLE` and the retry actions live in the tick. It is the only
-cron the module needs — schedule it every 5 minutes
+cron the module needs; schedule it every 5 minutes
 ([operations.md](operations.md)).
 
 ```ts
-// lib/events/tick.ts — the one cron. Runs every 5 minutes; works off `nextActionAt <= now`.
+// lib/events/tick.ts: the one cron. Runs every 5 minutes; works off `nextActionAt <= now`.
 // Every branch is safe to run twice: Stripe calls carry idempotency keys and transitions
 // on an already-moved participant are no-ops.
 import type { EventsEngine } from './engine';
@@ -123,7 +123,7 @@ export function createTick(engine: EventsEngine, webhook: WebhookHandler) {
     if (sessionId) {
       const session = await gateway.retrieveCheckout(sessionId);
       if (session.status === 'complete') {
-        await webhook.fulfilCheckout(session); // the webhook was lost or late — recover it
+        await webhook.fulfilCheckout(session); // the webhook was lost or late, so recover it
         return;
       }
       if (session.status === 'open') await gateway.expireCheckout(sessionId);
@@ -228,12 +228,12 @@ export function createTick(engine: EventsEngine, webhook: WebhookHandler) {
 ## The schedule functions
 
 ```ts
-// lib/events/deposit-schedule.ts — when to hold, when to give up, when to settle.
+// lib/events/deposit-schedule.ts: when to hold, when to give up, when to settle.
 //
 // Card authorizations expire. Online, a hold the customer authorizes in Checkout (a
 // customer-initiated transaction) lasts ~7 days on the major networks. A hold the server
 // places later with a saved card (merchant-initiated) lasts only ~4 days 18 hours on Visa.
-// The charge's `capture_before` is the authoritative expiry — always prefer it once known.
+// The charge's `capture_before` is the authoritative expiry; always prefer it once known.
 import type { DepositStrategy } from './types';
 
 const HOUR = 3_600_000;
@@ -248,7 +248,7 @@ export interface DepositPolicy {
   settleGraceMs: number;
   /** Capture at least this long before the authorization's capture_before. */
   captureSafetyMs: number;
-  /** No hold in place this long before the start → release the seat. */
+  /** No hold in place this long before the start means the seat is released. */
   holdCutoffBeforeStartMs: number;
 }
 
@@ -312,7 +312,7 @@ export function settleDueAt(
       `deposit` on a paid event).
 - [ ] The Stripe account has card payments enabled for every currency a
       deposit is offered in.
-- [ ] The staff check-in screen exists and is used — without it every attendee
+- [ ] The staff check-in screen exists and is used; without it every attendee
       is a "no-show" at settlement ([ui.md](ui.md)).
 - [ ] The tick runs every 5 minutes and alerts on `failed` entries.
 - [ ] Disclosure copy is on the registration form and in the confirmation email.

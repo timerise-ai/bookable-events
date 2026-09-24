@@ -12,13 +12,14 @@ description: >
   (4) the user mentions: event registration, ticketed events, RSVP with
   deposit, no-show fee, no-show deposit, card hold, hold funds, authorize and
   capture later, capture_method manual, uncaptured payment, capture_before,
-  SetupIntent, off_session, "release the deposit on check-in", "charge
-  no-shows", escrow for attendance, Stripe Checkout tickets, refund on cancel,
-  cancel event and refund everyone. Carries a pure participant state machine,
-  the hold timing that survives Visa's shorter merchant-initiated window, any
-  ISO currency with USD by default, and regression tests for defects that
-  leaked money in production. Next.js App Router; Firestore or Postgres.
-  Not a marketplace payout skill.
+  SetupIntent, off_session, checkout.session.expired, "release the deposit on
+  check-in", "charge no-shows", escrow for attendance, Stripe Checkout
+  tickets, refund on cancel, cancel event and refund everyone. Carries a pure
+  participant state machine, the hold timing that survives Visa's shorter
+  merchant-initiated window, any ISO currency with USD by default, refunds of
+  the amount frozen at registration, and 47 tests that hold each rule.
+  Next.js App Router; Firestore or Postgres behind an EventStore seam. Not a
+  marketplace payout skill, not subscriptions, not seat maps or resale.
 ---
 
 # Bookable Events with No-Show Deposits
@@ -34,73 +35,99 @@ until Stripe confirms.
 
 - Capacity-limited events (free or paid) with online registration and payment.
 - Free events that need a refundable deposit to stop no-shows.
-- Staff check-in at the door that must drive money (release vs capture).
-- Auditing an existing module — [provenance.md](references/provenance.md) lists
-  the defects this one shipped with.
+- Staff check-in at the door that must drive money (release or capture).
+- Auditing or upgrading an existing event-registration module:
+  [provenance.md](references/provenance.md) has the audit ledger and the order of work.
 
 ## When NOT to use
 
-- **Splitting payments between sellers, payouts, marketplace escrow** — use the
+- **Splitting payments between sellers, payouts, marketplace escrow**: use the
   sibling `stripe-connect-subscriptions` skill.
-- **Recurring memberships or subscriptions** — also `stripe-connect-subscriptions`.
-- **Time-slot resource booking (lanes, courts, rooms by the hour)** — a booking
+- **Recurring memberships or subscriptions**: also `stripe-connect-subscriptions`.
+- **Time-slot resource booking (lanes, courts, rooms by the hour)**: a booking
   engine's job; this skill only notes where events block such slots.
-- **Walk-up touchscreen registration** — the sibling `booking-kiosk` skill owns
+- **Walk-up touchscreen registration**: the sibling `booking-kiosk` skill owns
   the unattended-terminal flow; it can call this engine.
-- **Seated venues with seat maps, or ticket resale** — different domain.
+- **Seated venues with seat maps, or ticket resale**: a different domain.
 
 ## Architecture
 
 ```
- routes (register · status/cancel/resume · staff check-in/no-show/waive/cancel · admin CRUD/cancel)
-   │ parse → authorize (host.ts: session, staff + locationId) → engine
-   ▼
- engine.transition ── store.mutateParticipant (ONE tx) ── applyAction (pure) ── seatDelta
-   │ commit
-   ▼ effectsOf(before, after) → Stripe: expire · cancel hold · capture · refund │ email
-   ▲                                   │ success → confirming action; failure → RETRY_*
- webhook (claim evt id) ───────────────┘
- tick every 5 min: nextActionAt ≤ now → EXPIRE_PENDING · PLACE_HOLD · SETTLE · RETRY_*
+ routes: register, status/cancel/resume, staff check-in/no-show/waive/cancel, admin CRUD/cancel
+   |  parse, authorize (host.ts: session, staff + locationId), call the engine
+   v
+ engine.transition --- store.mutateParticipant (ONE tx) --- applyAction (pure) --- seatDelta
+   |  commit
+   v
+ effectsOf(before, after) --> Stripe: expire, cancel hold, capture, refund; email
+   ^                            success: confirming action; failure: RETRY_*
+   |
+ webhook (claim evt id)
+ tick every 5 min: nextActionAt <= now --> EXPIRE_PENDING, PLACE_HOLD, SETTLE, RETRY_*
 ```
+
+Routes parse and authorize, then hand one action to the engine. The engine
+applies it to the participant through the pure machine inside one store
+transaction, adjusts the seat counter by `seatDelta`, and only after commit
+runs the effects the state change implies. Webhooks and the tick are two more
+sources of actions into the same path.
+
+### Adaptation contract
+
+The seam lives here rather than in a separate `references/adaptation.md`. The
+rename table is in [data-model.md](references/data-model.md).
+
+| Seam | This skill ships | The host supplies |
+|---|---|---|
+| Domain entities | event, participant, ticket, deposit, and a rename table | its vocabulary (class, session, attendee, and so on) |
+| Tenant scope | `locationId` on events and participants, checked per route | its venue, site or workspace model |
+| Auth | `getCustomer`, `getStaff`, `canAccessLocation` in `host.ts` | Clerk, NextAuth, Supabase, Firebase, or its own |
+| Data access | `EventStore` port; Firestore and Postgres implementations | its SDK or ORM |
+| Payments | `StripeGateway` behind `PaymentGateway`; webhook handler | Stripe keys; optional shared webhook |
+| Stored credit | optional `BalanceLedger` port | its wallet, or `null` |
+| Notifications | `Notifier` port, 11 notification kinds | its email or SMS provider and templates |
+| Background work | one tick, every 5 minutes | its cron or scheduler |
+| Currency | any ISO-4217, `usd` default, optional allow-list | its default and restriction |
+| UI primitives | structure, states, copy rules | buttons, dialogs, tables, toasts |
+| Styling | layout intent only | its design system |
+| Strings | `events.*` keys and error codes | its i18n files, every locale |
+| Validation | dependency-free parsers | its schema library, if preferred |
 
 ## Critical facts
 
-1. **Holds expire.** ~7 days when the customer authorizes in Checkout, only
-   **~4 d 18 h for a Visa hold the server places later**. Events settling
-   within 6 days hold in Checkout; later ones save the card and the tick holds
-   4 days before settlement.
+1. **Holds expire.** About 7 days when the customer authorizes in Checkout, only
+   **about 4 days 18 hours for a Visa hold the server places later**. Events
+   settling within 6 days hold in Checkout; later ones save the card and the
+   tick holds 4 days before settlement.
 2. **`payment_intent.payment_failed` is not the end.** Checkout stays open
    after a decline; only `checkout.session.expired` ends a pending seat.
 3. **Free means free in every currency.** A missing or zero price in the
    chosen currency on a paid event is a refusal, never a free ticket.
 4. **Refunds use the amount frozen at registration**, never today's price.
 5. **Money that arrives for a released seat goes back.** The seat is never
-   resurrected — it may already be resold.
+   resurrected, because it may already be resold.
 6. **A repeated action returns the same object.** That single rule makes
    webhooks, double taps and cron retries safe.
 
 ## Hard rules
 
-> **Never call Stripe inside a database transaction, and never write state
-> after calling Stripe without a durable intent first.** Transaction callbacks
-> re-run; failed writes after a capture lose the record of money moved.
-
-> **Never take identity from the request body.** Customer from the session,
-> guests by HMAC manage link, staff by the host guard with location scope on
-> every `[eventId]` route.
-
-> **Never capture before settlement.** Check-in must be possible first; a hold
-> that would lapse is renewed, or released — never captured early.
-
-> **Never let a status flip cancel an event.** Cancelling is an action that
-> refunds and releases everyone.
-
-> **Never swallow a webhook error into a 200.** Release the claim, answer 500,
-> let Stripe retry.
+1. **Transaction first, Stripe second.** Never call Stripe inside a database
+   transaction, and never write state after a Stripe call without a durable
+   intent first. Transaction callbacks re-run, and a failed write after a
+   capture loses the record of money moved.
+2. **Identity never comes from the request body.** Customers from the session,
+   guests by HMAC manage link, staff by the host guard with location scope on
+   every `[eventId]` route.
+3. **Never capture before settlement.** Check-in must be possible first; a hold
+   that would lapse is renewed or released, never captured early.
+4. **Cancelling an event is an action, not a status.** It refunds and releases
+   everyone; a status flip would leave every participant charged.
+5. **A webhook error is a 500.** Release the claim, answer 500 and let Stripe
+   retry; a swallowed error is a payment nobody records.
 
 ## Quick start
 
-1. Model: [data-model.md](references/data-model.md) — rename table, types, seat accounting.
+1. Model: [data-model.md](references/data-model.md), the rename table, types, seat accounting.
 2. Pure core: [money-and-time.md](references/money-and-time.md), then
    [participant-lifecycle.md](references/participant-lifecycle.md).
 3. Store: [firestore.md](references/firestore.md) or [postgres.md](references/postgres.md).
@@ -109,24 +136,7 @@ until Stripe confirms.
 6. Routes: [api-routes.md](references/api-routes.md); screens: [ui.md](references/ui.md).
 7. Tests: [testing.md](references/testing.md), [testing-lifecycles.md](references/testing-lifecycles.md).
 8. Go live: [operations.md](references/operations.md).
-
-## Adaptation Contract
-
-| Seam | This skill ships | The host supplies |
-|---|---|---|
-| Domain entities | event / participant / ticket / deposit + rename table | its vocabulary (class, session, attendee…) |
-| Tenant scope | `locationId` on events and participants, checked per route | its venue / site / workspace model |
-| Auth | `getCustomer`, `getStaff`, `canAccessLocation` in `host.ts` | Clerk, NextAuth, Supabase, Firebase… |
-| Data access | `EventStore` port; Firestore and Postgres implementations | its SDK or ORM |
-| Payments | `StripeGateway` behind `PaymentGateway`; webhook handler | Stripe keys; optional shared webhook |
-| Stored credit | optional `BalanceLedger` port | its wallet, or `null` |
-| Notifications | `Notifier` port, 11 notification kinds | its email/SMS provider and templates |
-| Background work | one tick, every 5 minutes | its cron / scheduler |
-| Currency | any ISO-4217, `usd` default, optional allow-list | its default and restriction |
-| UI primitives | structure, states, copy rules | buttons, dialogs, tables, toasts |
-| Styling | layout intent only | its design system |
-| Strings | `events.*` keys and error codes | its i18n files, every locale |
-| Validation | dependency-free parsers | its schema library, if preferred |
+9. Before changing a template: [provenance.md](references/provenance.md).
 
 ## Reference directory
 
@@ -143,6 +153,9 @@ until Stripe confirms.
 | Postgres store | schema, FOR UPDATE, jsonb, RLS, Supabase | [postgres.md](references/postgres.md) |
 | Routes, auth, errors | route handler, requireStaffForEvent, CRON_SECRET, 409 | [api-routes.md](references/api-routes.md) |
 | Screens | registration dialog, check-in screen, admin form, manage page | [ui.md](references/ui.md) |
-| Tests | vitest, fixtures, fake gateway, regression | [testing.md](references/testing.md), [testing-lifecycles.md](references/testing-lifecycles.md) |
+| Core and state-machine tests | vitest, fixtures, fake gateway, in-memory store | [testing.md](references/testing.md) |
+| Lifecycle tests | end-to-end, regression, redelivered webhook, late payment, capacity | [testing-lifecycles.md](references/testing-lifecycles.md) |
 | Env, cron, monitoring, emails | env vars, vercel cron, reconciliation, go-live | [operations.md](references/operations.md) |
-| Origin, defects fixed, additions | audit, provenance, fix order | [provenance.md](references/provenance.md) |
+| What the audit changed and why | audit, provenance, kept deliberately, order of work | [provenance.md](references/provenance.md) |
+
+Part of the [Timerise Skills](https://github.com/timerise-ai/skills) index, which lists the sibling skills.

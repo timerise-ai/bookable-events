@@ -8,7 +8,7 @@ skill (`@/lib/events/*`).
 |---|---|---|
 | `test/core.test.ts` | 22 | Currency conversion (0/2/3 decimals, ISK/UGX legacy), pricing never free by currency switch, DST-correct time, the hold schedule |
 | `test/machine.test.ts` | 8 | Same-object no-ops, purity, stale-intent guard, no seat resurrection, renewal effects |
-| `test/engine.test.ts` ([testing-lifecycles.md](testing-lifecycles.md)) | 17 | Whole lifecycles against an in-memory store and a fake gateway, including three regression tests for defects found in the original module |
+| `test/engine.test.ts` ([testing-lifecycles.md](testing-lifecycles.md)) | 17 | Whole lifecycles against an in-memory store and a fake gateway, including three regression tests for defects found in the earlier implementation |
 
 Scenario tests move an injected clock (`now: () => new Date(clock.t)`) instead
 of sleeping, so a three-week deposit lifecycle runs in milliseconds.
@@ -27,14 +27,14 @@ export default defineConfig({
 Hosts with `TZ` pinned in their test script (for example `TZ=UTC`) need no
 change: every time function takes the zone explicitly.
 
-## Fixtures — in-memory store and fake gateway
+## Fixtures: in-memory store and fake gateway
 
 The in-memory store follows the `EventStore` contract exactly: `mutate`
 throwing writes nothing, same-object returns write nothing, seat deltas apply
 with the write. Use it for host-side tests too.
 
 ```ts
-// test/fixtures.ts — in-memory EventStore + fake PaymentGateway for engine scenario tests.
+// test/fixtures.ts: in-memory EventStore + fake PaymentGateway for engine scenario tests.
 import type Stripe from 'stripe';
 import { seatDelta } from '@/lib/events/participant-machine';
 import { RegistrationError, type EventStore, type Notifier } from '@/lib/events/ports';
@@ -80,7 +80,7 @@ export function memoryStore(): EventStore & { events: Map<string, EventRecord>; 
       const stored = parts.get(id);
       if (!e || !stored) return null;
       const before = clone(stored);
-      const after = mutate(before, clone(e)); // throws → nothing written, like a rolled-back tx
+      const after = mutate(before, clone(e)); // throws, so nothing is written, like a rolled-back tx
       if (after !== before) {
         e.seatsTaken += seatDelta(before, after);
         parts.set(id, clone(after));
@@ -187,7 +187,7 @@ export function makeEvent(over: Partial<EventRecord> = {}): EventRecord {
 ## Pure core
 
 ```ts
-// test/core.test.ts — the pure core: currency, pricing, time, schedule.
+// test/core.test.ts: the pure core (currency, pricing, time, schedule).
 import { describe, expect, it } from 'vitest';
 import {
   formatMoney, fromStripeAmount, minorUnitExponent, normalizeCurrency, toStripeAmount,
@@ -216,7 +216,7 @@ describe('currency', () => {
     expect(minorUnitExponent('kwd')).toBe(3);
   });
 
-  it('converts to Stripe units, including the ISK/UGX ×100 legacy', () => {
+  it('converts to Stripe units, including the ISK/UGX x100 legacy', () => {
     expect(toStripeAmount(1999, 'usd')).toBe(1999);
     expect(toStripeAmount(500, 'jpy')).toBe(500);
     expect(toStripeAmount(500, 'isk')).toBe(50000);
@@ -224,7 +224,7 @@ describe('currency', () => {
     expect(toStripeAmount(1250, 'kwd')).toBe(1250);
   });
 
-  it('round-trips and rejects fractional króna from Stripe', () => {
+  it('round-trips and rejects fractional krona from Stripe', () => {
     for (const [a, c] of [[1999, 'usd'], [500, 'jpy'], [500, 'isk'], [1250, 'kwd']] as const) {
       expect(fromStripeAmount(toStripeAmount(a, c), c)).toBe(a);
     }
@@ -239,7 +239,7 @@ describe('currency', () => {
 
   it('formats with the right number of decimals', () => {
     expect(formatMoney(1999, 'usd', 'en-US')).toBe('$19.99');
-    expect(formatMoney(500, 'jpy', 'en-US')).toBe('¥500');
+    expect(formatMoney(500, 'jpy', 'en-US')).toBe('\u00a5500');
     expect(formatMoney(1250, 'kwd', 'en-US')).toMatch(/1\.250/);
   });
 });
@@ -287,7 +287,7 @@ describe('resolveCharge', () => {
 
 describe('time', () => {
   it('converts local wall-clock to UTC across DST', () => {
-    // New York: EST (UTC−5) in January, EDT (UTC−4) in July.
+    // New York: EST (UTC-5) in January, EDT (UTC-4) in July.
     expect(zonedToUtc('2026-01-15', '19:00', 'America/New_York').toISOString()).toBe('2026-01-16T00:00:00.000Z');
     expect(zonedToUtc('2026-07-15', '19:00', 'America/New_York').toISOString()).toBe('2026-07-15T23:00:00.000Z');
     // Warsaw on the spring-forward day: 10:00 is already CEST (UTC+2).
@@ -300,7 +300,7 @@ describe('time', () => {
   });
 
   it('resolves a repeated autumn wall time to the later (standard-time) occurrence', () => {
-    // Warsaw falls back 03:00 CEST → 02:00 CET on 2026-10-25; 02:30 CET = 01:30Z.
+    // Warsaw falls back from 03:00 CEST to 02:00 CET on 2026-10-25; 02:30 CET = 01:30Z.
     expect(zonedToUtc('2026-10-25', '02:30', 'Europe/Warsaw').toISOString()).toBe('2026-10-25T01:30:00.000Z');
   });
 
@@ -321,7 +321,7 @@ describe('deposit schedule', () => {
   const window = { start: new Date('2026-06-10T18:00:00Z'), end: new Date('2026-06-10T21:00:00Z') };
   const settle = window.end.getTime() + DEFAULT_DEPOSIT_POLICY.settleGraceMs; // 23:00Z
 
-  it('holds in Checkout when settlement is ≤ 6 days away, else saves the card', () => {
+  it('holds in Checkout when settlement is at most 6 days away, else saves the card', () => {
     expect(chooseDepositStrategy(window, new Date(settle - 6 * D))).toBe('hold_now');
     expect(chooseDepositStrategy(window, new Date(settle - 6 * D - 1))).toBe('save_card');
   });
@@ -349,7 +349,7 @@ describe('deposit schedule', () => {
 ## State machine
 
 ```ts
-// test/machine.test.ts — transition table guarantees the engine relies on.
+// test/machine.test.ts: transition table guarantees the engine relies on.
 import { describe, expect, it } from 'vitest';
 import { effectsOf } from '@/lib/events/effects';
 import { applyAction, LatePaymentError, seatDelta, TransitionError } from '@/lib/events/participant-machine';
@@ -374,7 +374,7 @@ function held(over: Partial<Participant['deposit']> = {}): Participant {
 }
 
 describe('participant machine', () => {
-  it('returns the same object for a repeated action (the engine’s "nothing to do")', () => {
+  it('returns the same object for a repeated action (the engine\'s "nothing to do")', () => {
     const p = held();
     expect(applyAction(p, { type: 'HOLD_AUTHORIZED', paymentIntentId: 'pi_live', captureBefore: T, paymentMethodId: null }, T)).toBe(p);
     const settled = applyAction(p, { type: 'SETTLE' }, T);

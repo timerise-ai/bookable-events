@@ -15,9 +15,9 @@ file, `lib/events/host.ts`.
 | `POST /api/stripe/webhook` | Stripe (signed) | [stripe.md](stripe.md) |
 | `GET /api/staff/events/{eventId}/participants` | staff, same location | check-in list |
 | `POST /api/staff/events/{eventId}/participants/{id}/check-in` `{ count }` | staff, same location | arrival; releases the hold when everyone arrived |
-| `POST …/{id}/no-show` | staff, same location | mark no-show (settlement still decides the capture) |
-| `POST …/{id}/waive` `{ reason }` | staff, same location | release the hold, record who and why |
-| `POST …/{id}/cancel` `{ refund }` | staff, same location | cancel with or without refund |
+| `POST .../{id}/no-show` | staff, same location | mark no-show (settlement still decides the capture) |
+| `POST .../{id}/waive` `{ reason }` | staff, same location | release the hold, record who and why |
+| `POST .../{id}/cancel` `{ refund }` | staff, same location | cancel with or without refund |
 | `POST /api/admin/events` | admin, target location | create |
 | `PUT /api/admin/events/{eventId}` | admin, same location | update (whitelist, capacity guard) |
 | `POST /api/admin/events/{eventId}/cancel` | admin, same location | cancel the event, refund everyone |
@@ -45,12 +45,12 @@ i18n keys (`events.errors.<code>`).
 
 | Rule | Defect it prevents |
 |---|---|
-| **Every** `[eventId]` staff/admin route calls `requireStaffForEvent`, which checks the event's `locationId` against the staff member's locations | Collection routes get the tenant check and `[id]` routes forget it — staff of one venue reading or editing another's events. |
+| **Every** `[eventId]` staff/admin route calls `requireStaffForEvent`, which checks the event's `locationId` against the staff member's locations | Collection routes get the tenant check and `[id]` routes forget it, so staff of one venue reading or editing another's events. |
 | Missing and foreign events both answer 404 | Probing ids must not reveal other tenants' events. |
 | Participant routes accept the session owner **or** the HMAC manage token | Guests can cancel; nobody can act on someone else's seat by guessing ids. |
 | The admin create route checks `canAccessLocation` on the **body's** `locationId` | An admin of location A creating events under location B. |
-| Cron fails **closed** when `CRON_SECRET` is unset | `if (secret && header !== …)` is open by default. |
-| The webhook verifies the signature on the raw text body | Parsing JSON first changes the bytes and every signature fails — or worse, someone "fixes" it by skipping verification. |
+| Cron fails **closed** when `CRON_SECRET` is unset | `if (secret && header !== ...)` is open by default. |
+| The webhook verifies the signature on the raw text body | Parsing JSON first changes the bytes and every signature fails, or worse, someone "fixes" it by skipping verification. |
 
 ## Host seam
 
@@ -59,7 +59,7 @@ and URLs. Replace each `HOST:` body; do not scatter these calls through the
 routes.
 
 ```ts
-// lib/events/host.ts — THE seam file. Replace each body with the host's own mechanism;
+// lib/events/host.ts: THE seam file. Replace each body with the host's own mechanism;
 // nothing else in lib/events imports the host.
 import Stripe from 'stripe';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -71,14 +71,14 @@ import { createTick } from './tick';
 import { createWebhookHandler, type WebhookHandler } from './webhook';
 import type { EventRecord } from './types';
 
-// ─── Auth ─────────────────────────────────────────────────────────────────
+// --- Auth -----------------------------------------------------------------
 
 export interface CustomerPrincipal { id: string; email: string }
 export interface StaffPrincipal { id: string; role: 'admin' | 'staff'; locationIds: string[] | 'all' }
 
 /** The signed-in customer, verified server-side (session cookie / bearer token). null = guest. */
 export async function getCustomer(_req: Request): Promise<CustomerPrincipal | null> {
-  throw new Error('HOST: return the verified customer from your auth (Clerk, NextAuth, Supabase, Firebase…)');
+  throw new Error('HOST: return the verified customer from your auth (Clerk, NextAuth, Supabase, Firebase...)');
 }
 
 /** The signed-in staff member, or null. Role and location list come from your staff store. */
@@ -90,16 +90,16 @@ export function canAccessLocation(staff: StaffPrincipal, locationId: string): bo
   return staff.locationIds === 'all' || staff.locationIds.includes(locationId);
 }
 
-// ─── Notifications ────────────────────────────────────────────────────────
+// --- Notifications --------------------------------------------------------
 
 const notifier: Notifier = {
   async send(kind, participant, _event, links) {
     // HOST: render `events.email.<kind>` in participant.locale and send via your provider.
-    console.info(`[events] notify ${kind} → ${participant.email} (${links.manage})`);
+    console.info(`[events] notify ${kind} to ${participant.email} (${links.manage})`);
   },
 };
 
-// ─── Runtime ──────────────────────────────────────────────────────────────
+// --- Runtime --------------------------------------------------------------
 
 let runtime: { engine: EventsEngine; webhook: WebhookHandler; tick: ReturnType<typeof createTick> } | null = null;
 
@@ -135,7 +135,7 @@ export function getEventsRuntime() {
 ## Shared helpers
 
 ```ts
-// lib/events/http.ts — one error envelope for every events route: { ok, data } | { ok:false, error, field? }
+// lib/events/http.ts: one error envelope for every events route: { ok, data } | { ok:false, error, field? }
 import { NextResponse } from 'next/server';
 import { TransitionError } from './participant-machine';
 import { RegistrationError } from './ports';
@@ -160,7 +160,7 @@ export class HttpError extends Error {
   }
 }
 
-/** Staff guard WITH tenant scope — every [eventId] staff/admin route calls this, not just the list. */
+/** Staff guard WITH tenant scope. Every [eventId] staff/admin route calls this, not just the list. */
 export async function requireStaffForEvent(req: Request, eventId: string, role: 'admin' | 'staff' = 'staff'): Promise<{ staff: StaffPrincipal; event: EventRecord }> {
   const staff = await getStaff(req);
   if (!staff) throw new HttpError('unauthorized', 401);
@@ -262,7 +262,7 @@ export async function POST(req: Request, { params }: Params) {
 
 ```ts
 // app/api/stripe/webhook/route.ts
-// If the host already has a Stripe webhook, call `webhook.handle(event)` from it instead —
+// If the host already has a Stripe webhook, call `webhook.handle(event)` from it instead;
 // the handler ignores anything without `metadata.kind` starting with `event_`.
 import Stripe from 'stripe';
 import { getEventsRuntime } from '@/lib/events/host';
@@ -293,7 +293,7 @@ export async function POST(req: Request) {
 ```
 
 ```ts
-// app/api/staff/events/[eventId]/participants/route.ts — the check-in list.
+// app/api/staff/events/[eventId]/participants/route.ts: the check-in list.
 import { getEventsRuntime } from '@/lib/events/host';
 import { ok, requireStaffForEvent, toErrorResponse } from '@/lib/events/http';
 
@@ -363,7 +363,7 @@ export async function POST(req: Request, { params }: Params) {
 ```
 
 ```ts
-// app/api/admin/events/route.ts — POST create. Location must be one the admin manages.
+// app/api/admin/events/route.ts: POST create. Location must be one the admin manages.
 import { randomUUID } from 'node:crypto';
 import { canAccessLocation, getEventsRuntime, getStaff } from '@/lib/events/host';
 import { fail, ok, toErrorResponse } from '@/lib/events/http';
@@ -396,7 +396,7 @@ export async function POST(req: Request) {
 ```
 
 ```ts
-// app/api/admin/events/[eventId]/route.ts — PUT update (whitelisted body, capacity guard).
+// app/api/admin/events/[eventId]/route.ts: PUT update (whitelisted body, capacity guard).
 import { getEventsRuntime } from '@/lib/events/host';
 import { fail, ok, requireStaffForEvent, toErrorResponse } from '@/lib/events/http';
 import { parseEventInput } from '@/lib/events/input';
@@ -411,7 +411,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ eventId:
       seatsTaken: event.seatsTaken, allowedCurrencies: ALLOWED_CURRENCIES,
     });
     if (!parsed.ok) return fail(parsed.code, 400, parsed.field);
-    // Cancelling goes through /cancel so participants are refunded — never a bare status flip.
+    // Cancelling goes through /cancel so participants are refunded, never a bare status flip.
     if (parsed.value.status === 'cancelled' && event.status !== 'cancelled') return fail('use_cancel_endpoint', 409, 'status');
     // Prices and deposits of an event with registrations are frozen per participant anyway
     // (payment.amount / deposit.amount), so editing them only affects new registrations.
@@ -428,7 +428,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ eventId:
 ```
 
 ```ts
-// app/api/admin/events/[eventId]/cancel/route.ts — cancel the event, refund and release everyone.
+// app/api/admin/events/[eventId]/cancel/route.ts: cancel the event, refund and release everyone.
 import { getEventsRuntime } from '@/lib/events/host';
 import { ok, requireStaffForEvent, toErrorResponse } from '@/lib/events/http';
 
@@ -449,7 +449,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
 ```
 
 ```ts
-// app/api/cron/events-tick/route.ts — schedule every 5 minutes.
+// app/api/cron/events-tick/route.ts: schedule every 5 minutes.
 import { timingSafeEqual } from 'node:crypto';
 import { getEventsRuntime } from '@/lib/events/host';
 

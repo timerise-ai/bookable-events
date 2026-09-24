@@ -5,7 +5,7 @@ when "the event" actually is. All three are pure and tested
 ([testing.md](testing.md)); everything money- or clock-shaped in the engine goes
 through them.
 
-## Currency — any ISO-4217 code, USD by default
+## Currency: any ISO-4217 code, USD by default
 
 | Rule | Why |
 |---|---|
@@ -20,8 +20,8 @@ Stripe's quirks the converter absorbs:
 | Currency class | Examples | Stored | Sent to Stripe |
 |---|---|---|---|
 | Two-decimal (default) | usd, eur, gbp, pln, huf, twd | cents | cents |
-| Zero-decimal | jpy, krw, clp, vnd, xof, … | whole units | whole units |
-| Zero-decimal, legacy two-decimal on Stripe | **isk, ugx** | whole units | × 100 (`500 ISK` → `50000`) |
+| Zero-decimal | jpy, krw, clp, vnd, xof, etc. | whole units | whole units |
+| Zero-decimal, legacy two-decimal on Stripe | **isk, ugx** | whole units | x 100 (`500 ISK` becomes `50000`) |
 | Three-decimal | bhd, jod, kwd, omr, tnd | thousandths | thousandths, **last digit must be 0** |
 
 `assertChargeableAmount` rejects a three-decimal price not ending in 0 **when the
@@ -33,16 +33,16 @@ example 0.50 USD/EUR, 0.30 GBP, 2.00 PLN, 50 JPY). Keep ticket prices and
 deposits above it; a deposit of 1 unit is rejected at Checkout.
 
 ```ts
-// lib/events/currency.ts — any ISO-4217 currency; USD by default.
+// lib/events/currency.ts: any ISO-4217 currency; USD by default.
 //
 // Two different "minor units" exist and must never be mixed:
-//   stored amount — the currency's real minor unit (ISK 500 = 500 krónur, KWD 1500 = 1.500 dinar)
-//   Stripe amount — what the Stripe API expects, which differs for ISK/UGX (×100) only
+//   stored amount: the currency's real minor unit (ISK 500 = 500 kronur, KWD 1500 = 1.500 dinar)
+//   Stripe amount: what the Stripe API expects, which differs for ISK/UGX (x100) only
 import type { CurrencyCode } from './types';
 
 export const DEFAULT_CURRENCY: CurrencyCode = 'usd';
 
-// Stripe's zero-decimal currencies, plus ISK (zero-decimal in practice, sent to Stripe ×100).
+// Stripe's zero-decimal currencies, plus ISK (zero-decimal in practice, sent to Stripe x100).
 const ZERO_DECIMAL = new Set([
   'bif', 'clp', 'djf', 'gnf', 'isk', 'jpy', 'kmf', 'krw', 'mga', 'pyg',
   'rwf', 'ugx', 'vnd', 'vuv', 'xaf', 'xof', 'xpf',
@@ -105,7 +105,7 @@ export function formatMoney(amount: number, currency: CurrencyCode, locale: stri
 }
 ```
 
-## Pricing — the server decides, per currency, with no "free by accident"
+## Pricing: the server decides, per currency, with no "free by accident"
 
 A paid event is **never** free in a currency it has no price in. That single
 rule is the difference between this module and one where a customer switches the
@@ -115,16 +115,16 @@ credited the full price in the default currency.
 | Event | `offeredCurrencies` | `resolveCharge(..., 'gbp')` |
 |---|---|---|
 | `ticketPrice: { usd: 2500, eur: 2300 }` | usd, eur | `currency_not_offered` |
-| `ticketPrice: { usd: 2500, pln: 0 }` | usd | `pln` → `currency_not_offered` (a 0 on a paid event is not an offer) |
-| `ticketPrice: {}` | — | `free`, any currency, `currency: null` |
-| `ticketPrice: {}`, `deposit: { usd: 2000 }` | usd | `currency_not_offered`; `usd` → `deposit` |
+| `ticketPrice: { usd: 2500, pln: 0 }` | usd | `pln` gives `currency_not_offered` (a 0 on a paid event is not an offer) |
+| `ticketPrice: {}` | none | `free`, any currency, `currency: null` |
+| `ticketPrice: {}`, `deposit: { usd: 2000 }` | usd | `currency_not_offered`; `usd` gives `deposit` |
 
 When the client sends no currency, `resolveCharge` picks the policy default if
 it is offered, else the first offered currency, so a single-currency event
 "just works" without a picker.
 
 ```ts
-// lib/events/pricing.ts — the server decides what a registration costs. Never the client.
+// lib/events/pricing.ts: the server decides what a registration costs. Never the client.
 import { DEFAULT_CURRENCY, normalizeCurrency } from './currency';
 import type { CurrencyCode, EventRecord } from './types';
 
@@ -142,7 +142,7 @@ export type ChargeResolution =
   | { ok: true; kind: 'deposit'; currency: CurrencyCode; amount: 0; depositPerTicket: number; depositTotal: number }
   | { ok: false; error: 'currency_invalid' | 'currency_not_offered' | 'currency_not_enabled' };
 
-/** Free means free in every currency — never "free in the currency the client picked". */
+/** Free means free in every currency, never "free in the currency the client picked". */
 export function isFreeEvent(event: Pick<EventRecord, 'ticketPrice'>): boolean {
   return Object.values(event.ticketPrice).every((v) => v === 0);
 }
@@ -191,18 +191,18 @@ export function resolveCharge(
 }
 ```
 
-## Time — wall-clock + IANA zone, converted on demand
+## Time: wall-clock + IANA zone, converted on demand
 
-The source system built instants as `` `${date}T${time}:00.000Z` `` — that is
+The earlier implementation built instants as `` `${date}T${time}:00.000Z` ``; that is
 UTC, not the venue's time, and every slot was off by the zone offset (twice a
 year by a different amount). The fix is to store what staff type and convert
 with the zone at the moment an instant is needed.
 
 | Function | Use |
 |---|---|
-| `zonedToUtc(date, time, tz)` | Any wall-clock → instant conversion. DST-correct, no dependency. |
+| `zonedToUtc(date, time, tz)` | Any wall-clock to instant conversion. DST-correct, no dependency. |
 | `eventWindowUtc(event)` | `{ start, end }` for registration cutoffs, cancel deadlines, hold scheduling. |
-| `todayIn(tz)` | "Upcoming events" lists. Never `new Date().toISOString().slice(0, 10)` — that is UTC's date, wrong for half the day in most zones. |
+| `todayIn(tz)` | "Upcoming events" lists. Never `new Date().toISOString().slice(0, 10)`: that is UTC's date, wrong for half the day in most zones. |
 | `isValidTimeZone(tz)` | Admin form validation. |
 
 A wall time skipped by the spring-forward jump (02:30 on a DST night) resolves
@@ -211,7 +211,7 @@ forward to 03:30. A repeated wall time in autumn resolves to the later
 the tick never crashes on them.
 
 ```ts
-// lib/events/time.ts — event wall-clock times → UTC instants, DST-correct, no dependencies.
+// lib/events/time.ts: event wall-clock times to UTC instants, DST-correct, no dependencies.
 // Events store local date + time + IANA zone. Never build `${date}T${time}Z`: that is UTC, not local.
 import type { EventRecord } from './types';
 
@@ -251,7 +251,7 @@ function tzOffsetMs(utcMs: number, tz: string): number {
   return asUtc - Math.floor(utcMs / 1000) * 1000;
 }
 
-/** Local wall-clock date + time in `tz` → UTC Date. A time skipped by DST resolves forward. */
+/** Local wall-clock date + time in `tz` to UTC Date. A time skipped by DST resolves forward. */
 export function zonedToUtc(date: string, time: string, tz: string): Date {
   const dm = DATE_RE.exec(date);
   const tm = TIME_RE.exec(time);
@@ -269,7 +269,7 @@ export function addDaysToDate(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Today's date in `tz` as YYYY-MM-DD — for "upcoming events" lists. */
+/** Today's date in `tz` as YYYY-MM-DD, for "upcoming events" lists. */
 export function todayIn(tz: string, now: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
     .format(now);

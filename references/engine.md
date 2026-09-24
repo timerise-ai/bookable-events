@@ -12,8 +12,8 @@ ledger and notifier. It is the only module routes and the tick call.
 | `notifier` | `Notifier` | yes | Host email/SMS; receives a kind + participant + manage link |
 | `ledger` | `BalanceLedger \| null` | no | Stored-credit wallet; `null` disables balance payments |
 | `urls` | `EngineUrls` | yes | success / cancel / manage URLs on the host's site |
-| `manageTokenSecret` | string | yes | ≥ 32 random bytes; rotating it invalidates outstanding guest links |
-| `now` | `() => Date` | no | Injected clock — tests move time instead of sleeping |
+| `manageTokenSecret` | string | yes | at least 32 random bytes; rotating it invalidates outstanding guest links |
+| `now` | `() => Date` | no | Injected clock; tests move time instead of sleeping |
 | `policy` | `DepositPolicy` | no | [no-show-deposits.md](no-show-deposits.md) |
 | `currencyPolicy` | `CurrencyPolicy` | no | Default: any currency, `usd` default |
 | `resolveName` | `(event, locale) => string` | no | Event name for Checkout line items |
@@ -31,12 +31,12 @@ ledger and notifier. It is the only module routes and the tick call.
 | `runEffects(result, effects)` | tick retries |
 | `manageToken(id)`, `verifyManageToken(id, token)` | email links, customer routes |
 
-`transition` is the heart: mutate in a transaction → reschedule → commit →
+`transition` is the heart: mutate in a transaction, then reschedule, then commit, then
 effects. Follow-up confirmations re-enter `transition`, which is why every
 action must be a no-op when already applied.
 
 ```ts
-// lib/events/engine.ts — orchestration. Transaction first, Stripe second, always.
+// lib/events/engine.ts: orchestration. Transaction first, Stripe second, always.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   DEFAULT_DEPOSIT_POLICY, chooseDepositStrategy, holdCutoffAt, holdPlacementDueAt, settleDueAt, type DepositPolicy,
@@ -72,7 +72,7 @@ export interface RegistrationInput {
   phone: string | null;
   locale: string;
   ticketCount: number;
-  currency: unknown;               // raw client choice — resolveCharge validates it
+  currency: unknown;               // raw client choice; resolveCharge validates it
   method: 'STRIPE' | 'BALANCE';
 }
 
@@ -164,13 +164,13 @@ export function createEventsEngine(deps: EngineDeps) {
             break;
         }
       } catch (err) {
-        // The participant already carries RETRY_* / nextActionAt — the tick picks it up.
+        // The participant already carries RETRY_* / nextActionAt; the tick picks it up.
         log(`effect ${effect.type} failed for participant ${p.id}`, err);
       }
     }
   }
 
-  // ─── Registration ─────────────────────────────────────────────────────────
+  // --- Registration ---------------------------------------------------------
 
   async function register(input: RegistrationInput): Promise<RegistrationResult> {
     const at = now();
@@ -253,7 +253,7 @@ export function createEventsEngine(deps: EngineDeps) {
 
     if (p.payment.method === 'STRIPE') {
       const s = await deps.gateway.createTicketCheckout({
-        ref, email: p.email, productName: `${name} ×${p.ticketCount}`, amount: p.payment.amount, currency, now: at, ...urls,
+        ref, email: p.email, productName: `${name} x${p.ticketCount}`, amount: p.payment.amount, currency, now: at, ...urls,
       });
       await patch(event.id, p.id, (cur) => ({ ...cur, payment: { ...cur.payment, checkoutSessionId: s.sessionId, expiresAt: s.expiresAt } }));
       return s.url;
@@ -263,7 +263,7 @@ export function createEventsEngine(deps: EngineDeps) {
     const s = p.deposit.strategy === 'save_card' && p.deposit.status === 'AWAITING_CARD'
       ? await deps.gateway.createSetupCheckout({ ref, customerId, now: at, ...urls })
       : await deps.gateway.createHoldCheckout({
-          ref, customerId, productName: `${name} — deposit, released on arrival`,
+          ref, customerId, productName: `${name}: deposit, released on arrival`,
           amount: p.deposit.amount, currency, now: at, ...urls,
         });
     await patch(event.id, p.id, (cur) => ({
@@ -288,7 +288,7 @@ export function createEventsEngine(deps: EngineDeps) {
     return startCheckout(res.after, res.event);
   }
 
-  // ─── Customer and staff actions ───────────────────────────────────────────
+  // --- Customer and staff actions -------------------------------------------
 
   async function cancelByCustomer(eventId: string, participantId: string) {
     const event = await deps.store.getEvent(eventId);
@@ -343,7 +343,7 @@ ports. `insertParticipant` and `mutateParticipant` are the two methods that
 **must** be real transactions; everything else is a plain read or write.
 
 ```ts
-// lib/events/ports.ts — what the host must implement. Everything else in lib/events is portable.
+// lib/events/ports.ts: what the host must implement. Everything else in lib/events is portable.
 import type { NotificationKind } from './effects';
 import type { EventInput } from './input';
 import type { CurrencyCode, EventRecord, EventStatus, Participant } from './types';
@@ -396,7 +396,7 @@ export interface EventStore {
   ): Promise<MutationResult | null>;
   /**
    * Claim a Stripe event id. false = already done, or claimed less than 10 minutes ago.
-   * A claim older than that without completion is reclaimable — the process that took it died.
+   * A claim older than that without completion is reclaimable; the process that took it died.
    */
   claimWebhookEvent(stripeEventId: string): Promise<boolean>;
   completeWebhookEvent(stripeEventId: string): Promise<void>;
