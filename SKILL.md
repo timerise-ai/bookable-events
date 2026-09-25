@@ -84,7 +84,7 @@ rename table is in [data-model.md](references/data-model.md).
 | Auth | `getCustomer`, `getStaff`, `canAccessLocation` in `host.ts` | Clerk, NextAuth, Supabase, Firebase, or its own |
 | Data access | `EventStore` port; Firestore and Postgres implementations | its SDK or ORM |
 | Payments | `StripeGateway` behind `PaymentGateway`; webhook handler | Stripe keys; optional shared webhook |
-| Stored credit | optional `BalanceLedger` port | its wallet, or `null` |
+| Stored credit | optional `BalanceLedger` port | its wallet (the sibling `ledger-wallet` skill implements the port), or `null` |
 | Notifications | `Notifier` port, 11 notification kinds | its email or SMS provider and templates |
 | Background work | one tick, every 5 minutes | its cron or scheduler |
 | Currency | any ISO-4217, `usd` default, optional allow-list | its default and restriction |
