@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-28
+
+Fix release, from scoring the prompt-1 agent eval runs against 0.1.1. Apps built from 0.1.0 or 0.1.1 should
+copy in the new `participant-machine.ts`, `engine.ts`, `webhook.ts`, `tick.ts` and the check-in list route.
+
+### Fixed
+- "Pay again" no longer loses the seat when the old session's `expired` webhook arrives before the new
+  session is stored: resume clears the session ids first, and `CHECKOUT_EXPIRED` names its session, checked
+  inside the transaction (`participant-lifecycle.md`, `engine.md`, `stripe.md`, `no-show-deposits.md`).
+- A second payment for a seat already paid is refunded instead of failing the webhook until Stripe gives up
+  (`participant-lifecycle.md`).
+- Cancelling an event refunds guests who already checked in; only a customer's own cancel is refused after
+  arrival (`participant-lifecycle.md`).
+- The check-in list route returns the event name, date, times and zone its screen shows (`api-routes.md`).
+- Three lifecycle tests hold these: 22 + 8 + 20 = 50 tests.
+
+### Changed
+- `SKILL.md` quick start: copy the blocks verbatim and edit only `host.ts`; run the fixtures and suites as
+  written; keep a template you think is wrong and say why in the handover; list the five env vars in
+  `.env.example` with no fallback and no other name; what the handover must name.
+- An app without login keeps `getCustomer` and `getStaff` returning `null` and never takes identity from
+  headers, query, body or a shared key (`SKILL.md` adaptation contract, `api-routes.md`).
+- `operations.md` states the five env vars are the whole contract.
+
 ## [0.1.1] - 2026-09-28
 
 Documentation-only release: the templates and references are unchanged from
