@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-28
+
+Documentation-only release: the templates and references are unchanged from
+0.1.0. The repository now carries the agent eval prompts and workflow the skill
+standard requires, and the front door describes them.
+
+### Changed
+- `SKILL.md` adaptation contract names the sibling `ledger-wallet` skill as an
+  implementation of the `BalanceLedger` port.
+- `README.md` file table lists `evals/` and the agent eval workflow.
+- `CLAUDE.md` describes `evals/` and the eval workflow, which is copied
+  verbatim from the standard and never edited.
+
 ## [0.1.0] - 2026-09-25
 
 Initial release of the `bookable-events` skill: capacity-limited registration
