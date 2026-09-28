@@ -247,7 +247,7 @@ export function createEventsEngine(deps: EngineDeps) {
   async function startCheckout(p: Participant, event: EventRecord): Promise<string> {
     const at = now();
     const ref = { eventId: event.id, participantId: p.id, attempt: p.checkoutAttempt };
-    const urls = { successUrl: deps.urls.success(event.id, p.id), cancelUrl: deps.urls.cancel(event.id) };
+    const urls = { successUrl: deps.urls.success(event.id, p.id, manageToken(p.id)), cancelUrl: deps.urls.cancel(event.id) };
     const name = nameOf(event, p.locale);
     const currency = p.currency ?? currencyPolicy.defaultCurrency;
 
@@ -419,7 +419,8 @@ export interface Notifier {
 }
 
 export interface EngineUrls {
-  success(eventId: string, participantId: string): string;
+  /** Carries the manage token: a guest back from Checkout has no other way to read their status. */
+  success(eventId: string, participantId: string, token: string): string;
   cancel(eventId: string): string;
   manage(eventId: string, participantId: string, token: string): string;
 }

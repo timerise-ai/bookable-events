@@ -134,9 +134,9 @@ wrong stays as shipped: [provenance.md](references/provenance.md) may say why; i
 5. Routes: [api-routes.md](references/api-routes.md); screens: [ui.md](references/ui.md); tests:
    [testing.md](references/testing.md), [testing-lifecycles.md](references/testing-lifecycles.md).
 6. Go live: [operations.md](references/operations.md). `.env.example` lists its five variables, empty, and
-   the templates read them as shipped: no fallback, no other name. Hand over those five, the webhook
-   endpoint and its eight event types, the 5-minute tick, that emails only log until the `Notifier` is wired,
-   and, in an app without login, that staff routes answer 401 until `getStaff` is.
+   the templates read them as shipped: no fallback, no other name, no extra check. Your final message names
+   those five, the webhook endpoint and its eight event types, the 5-minute tick, that emails only log until
+   the `Notifier` is wired, and, in an app without login, that staff routes answer 401 until `getStaff` is.
 
 ## Reference directory
 

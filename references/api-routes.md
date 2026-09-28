@@ -65,6 +65,10 @@ with request headers, a query parameter, a body field or a shared API key; each
 lets anyone who can send a request act as staff. Say in the handover that staff
 routes are closed until `getStaff` is wired.
 
+The runtime block below is copied as shipped apart from the store line. `required()` already fails the request
+that needs a missing variable, and the engine builds every link, the success URL's manage token included, so
+format or length checks and token code of your own add nothing.
+
 ```ts
 // lib/events/host.ts: THE seam file. Replace each body with the host's own mechanism;
 // nothing else in lib/events imports the host.
@@ -126,7 +130,7 @@ export function getEventsRuntime() {
     ledger: null, // HOST: a BalanceLedger if customers hold stored credit
     manageTokenSecret: required('EVENTS_MANAGE_TOKEN_SECRET'),
     urls: {
-      success: (eventId, participantId) => `${base}/events/${eventId}/registered?p=${participantId}`,
+      success: (eventId, participantId, token) => `${base}/events/${eventId}/registered?p=${participantId}&t=${token}`,
       cancel: (eventId) => `${base}/events/${eventId}`,
       manage: (eventId, participantId, token) => `${base}/events/${eventId}/manage/${participantId}?t=${token}`,
     },

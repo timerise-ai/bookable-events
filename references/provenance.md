@@ -128,6 +128,17 @@ customer only; staff and the event cancel refund arrived guests. A lifecycle tes
 Found by the same eval. The screen in [ui.md](ui.md) shows the event name and times, and the list route
 returned only capacity and seats taken. **Shipped:** the route returns name, date, times and zone.
 
+### 20. A refunded second payment reported the paid seat as refunded
+Found by the agent eval of 0.1.2, in the fix for entry 17. Refunding the second payment sends
+`charge.refunded` for that payment, and the handler applied it to the participant whose seat the first payment
+holds, releasing it. **Shipped:** `charge.refunded` is ignored unless it names the participant's own payment
+intent. The second-payment lifecycle test delivers that webhook.
+
+### 21. A guest back from Checkout could not read their status
+Found by the same eval. The success URL carried only the participant id, and the status route needs the
+session owner or the manage token, so a guest's "registered" page could not poll. **Shipped:** `urls.success`
+receives the manage token, and the host's URL carries it as `t`.
+
 ## Kept deliberately
 
 | Choice | Why it stays |

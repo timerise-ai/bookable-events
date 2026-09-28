@@ -288,8 +288,14 @@ describe('paid tickets', () => {
         metadata: { kind: 'event_ticket', eventId: 'ev1', participantId: r.participantId },
       }));
     }
-    expect(s.part(r.participantId).payment).toMatchObject({ status: 'CONFIRMED', paymentIntentId: 'pi_a' });
     expect(s.fake.calls).toContain(`refund:pi_b:2500usd:late:${r.participantId}`);
+    // That refund's own `charge.refunded` must not touch the seat paid by pi_a.
+    const retrieve = s.fake.gw.retrievePaymentIntent;
+    s.fake.gw.retrievePaymentIntent = async (id) => ({
+      ...(await retrieve(id)), metadata: { kind: 'event_ticket', eventId: 'ev1', participantId: r.participantId },
+    }) as Stripe.PaymentIntent;
+    await s.webhook.handle(stripeEvent('charge.refunded', { payment_intent: 'pi_b', amount_refunded: 2500, currency: 'usd' }));
+    expect(s.part(r.participantId).payment).toMatchObject({ status: 'CONFIRMED', paymentIntentId: 'pi_a' });
     expect(s.seats()).toBe(1);
   });
 

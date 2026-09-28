@@ -207,7 +207,8 @@ export function createWebhookHandler(engine: EventsEngine) {
         const ref = refOf((await gateway.retrievePaymentIntent(piId)).metadata); // the intent carries our metadata
         if (!ref || ref.kind !== 'event_ticket') return;
         const p = await store.getParticipant(ref.eventId, ref.participantId);
-        if (!p) return;
+        // A refund of late or second money is not this seat's refund.
+        if (!p || p.payment.paymentIntentId !== piId) return;
         const amount = fromStripeAmount(charge.amount_refunded, charge.currency);
         await engine.transition(p.eventId, p.id, p.payment.status === 'REFUND_PENDING' && amount >= p.payment.amount
           ? { type: 'REFUND_SUCCEEDED', amount }
