@@ -23,3 +23,10 @@ isolated: true
 timedOut: false
 runUrl: https://github.com/timerise-ai/bookable-events/actions/runs/36450830048
 ---
+
+Rubric 8/8 (claude-opus-5-5, scored from the JSON summary). The templates are copied unchanged except
+`host.ts`, the 50 tests pass under vitest and type-check under `--noUncheckedIndexedAccess`, and `getStaff`
+returns `null`. `.env.example` lists the five variables empty, plus the host's `DATABASE_URL`. The final
+message names the five variables, the webhook endpoint and its eight event types, the 5-minute tick with its
+bearer header, the logged emails and the 401 staff routes. `vercel.json` in place of `vercel.ts` and the
+commented-out Supabase policy are both documented variants.
