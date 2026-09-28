@@ -58,6 +58,13 @@ i18n keys (`events.errors.<code>`).
 and URLs. Replace each `HOST:` body; do not scatter these calls through the
 routes.
 
+**An app without login** keeps `getCustomer` and `getStaff` returning `null`:
+every customer registers as a guest with a manage link, and the staff and admin
+routes answer 401 until the host's auth is wired in. Do not stand in for a login
+with request headers, a query parameter, a body field or a shared API key; each
+lets anyone who can send a request act as staff. Say in the handover that staff
+routes are closed until `getStaff` is wired.
+
 ```ts
 // lib/events/host.ts: THE seam file. Replace each body with the host's own mechanism;
 // nothing else in lib/events imports the host.
@@ -303,7 +310,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ eventId:
     const { event } = await requireStaffForEvent(req, eventId);
     const participants = await getEventsRuntime().engine.deps.store.listParticipants(eventId);
     return ok({
-      event: { id: event.id, capacity: event.capacity, seatsTaken: event.seatsTaken },
+      event: {
+        id: event.id, name: event.name, date: event.date, timeStart: event.timeStart, timeEnd: event.timeEnd,
+        timeZone: event.timeZone, capacity: event.capacity, seatsTaken: event.seatsTaken,
+      },
       participants: participants.map((p) => ({
         id: p.id, fullName: p.fullName, email: p.email, phone: p.phone, ticketCount: p.ticketCount,
         currency: p.currency, payment: p.payment.status, paid: p.payment.amount, method: p.payment.method,

@@ -67,11 +67,12 @@ mark it or when settlement finds nobody arrived. Check-in can be corrected
 | Rule | Consequence if broken |
 |---|---|
 | A repeated action returns **the same object** | Redelivered webhooks and double taps become no-ops. Returning a copy writes again and re-sends every email. |
-| Money for a seat that is gone raises `LatePaymentError` | The webhook refunds / cancels it. Silently confirming would push `seatsTaken` past capacity; silently ignoring keeps the money with no seat. |
+| Money for a seat that is gone, or a second payment for a seat already paid, raises `LatePaymentError` | The webhook refunds / cancels it. Silently confirming would push `seatsTaken` past capacity; failing the transition answers 500 forever and keeps the money. |
 | `HOLD_RELEASED` / `HOLD_CAPTURED` carry the `paymentIntentId` and ignore a mismatch | After a renewal or an abandoned 3DS attempt there are two intents; the old one's `canceled` event must not release the live hold. |
 | Partial check-in keeps the hold `HELD` | Settlement captures `amountPerTicket x missing`. Releasing on the first arrival would let a group of four send one person. |
 | Late cancel = no-show | Otherwise the cheapest no-show is "cancel from the car park". The deadline is `cancelDeadlineHours` before the start. |
-| No `CANCEL` after `ARRIVED` | A present customer cannot refund themselves; staff can still waive. |
+| No customer `CANCEL` after `ARRIVED` | A present customer cannot refund themselves. Staff and the event cancel still can: a cancelled event refunds the guests already at the door too. |
+| An expiry names its session, and the machine ignores a session that is no longer current | "Pay again" expires the old session; its `expired` webhook can arrive before the new session id is stored, and must not release the seat the customer is paying for. |
 | `payment_intent.payment_failed` is not an action | Stripe sends it for each declined attempt while Checkout is still open. Treating it as terminal is how a customer ends up charged with no seat. Only `checkout.session.expired` ends a PENDING registration. |
 
 ```ts
@@ -90,7 +91,7 @@ export type ParticipantAction =
   | { type: 'CARD_SAVED'; paymentMethodId: string }
   | { type: 'HOLD_NEEDS_ACTION'; paymentIntentId: string; error: string }
   | { type: 'HOLD_DECLINED'; error: string }
-  | { type: 'CHECKOUT_EXPIRED' }
+  | { type: 'CHECKOUT_EXPIRED'; sessionId?: string | null } // the session seen expiring; none for a wallet payment
   | { type: 'CHECK_IN'; count: number; by: string }
   | { type: 'MARK_NO_SHOW'; by: string }
   | { type: 'WAIVE'; by: string; reason: string }
@@ -150,8 +151,10 @@ export function applyAction(p: Participant, action: ParticipantAction, now: Date
 
   switch (action.type) {
     case 'TICKET_PAID': {
-      if (pay.status === 'CONFIRMED' && pay.paymentIntentId === action.paymentIntentId) return p;
+      if (pay.paymentIntentId === action.paymentIntentId) return p; // this payment is already recorded
       if (isSeatGone(p)) throw new LatePaymentError(`ticket paid for ${pay.status} participant ${p.id}`);
+      // A second payment for a seat already paid (two Checkout tabs) goes back like late money.
+      if (pay.status === 'CONFIRMED') throw new LatePaymentError(`second payment for participant ${p.id}`);
       if (pay.status !== 'PENDING' || pay.method !== 'STRIPE') fail(p, action);
       return { ...p, payment: { ...pay, status: 'CONFIRMED', paymentIntentId: action.paymentIntentId, expiresAt: null }, updatedAt: now };
     }
@@ -207,6 +210,8 @@ export function applyAction(p: Participant, action: ParticipantAction, now: Date
 
     case 'CHECKOUT_EXPIRED': {
       if (pay.status !== 'PENDING') return p; // paid, cancelled or already expired: nothing to do
+      // Checked here, inside the transaction: "pay again" may have replaced the session since.
+      if (action.sessionId !== undefined && action.sessionId !== (pay.checkoutSessionId ?? dep.checkoutSessionId)) return p;
       return { ...p, payment: { ...pay, status: 'EXPIRED', expiresAt: null }, updatedAt: now };
     }
 
@@ -268,7 +273,7 @@ export function applyAction(p: Participant, action: ParticipantAction, now: Date
 
     case 'CANCEL': {
       if (!holdsSeat(p)) return p;
-      if (att.status === 'ARRIVED') throw new TransitionError('already_arrived', 'cannot cancel after check-in');
+      if (att.status === 'ARRIVED' && action.actor === 'customer') throw new TransitionError('already_arrived', 'cannot cancel after check-in');
       const cancelled = { cancelledAt: now, cancelledBy: action.actor };
       if (pay.status === 'PENDING') {
         return { ...p, ...cancelled, payment: { ...pay, status: 'CANCELLED', expiresAt: null }, updatedAt: now };

@@ -12,6 +12,11 @@ What must run, what must be configured, and what an operator needs to see.
 | `CRON_SECRET` | tick route | Required: the route refuses every call when unset |
 | `APP_BASE_URL` | Checkout return URLs, email links | The public origin, no trailing slash |
 
+These five names are the whole contract. `.env.example` lists each of them, empty, and is tracked. The
+templates read them at request time (`host.ts` through `required()`, the webhook and tick routes directly), so
+a missing one fails the request that needs it, never the build; none falls back to a default, and none is
+renamed. The database connection is the host's own variable.
+
 ## Background work
 
 One job: `GET /api/cron/events-tick` every **5 minutes**, with

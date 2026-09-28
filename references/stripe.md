@@ -163,10 +163,8 @@ export function createWebhookHandler(engine: EventsEngine) {
         const s = event.data.object;
         const ref = refOf(s.metadata);
         if (!ref) return;
-        const p = await store.getParticipant(ref.eventId, ref.participantId);
-        // Only the CURRENT session expiring releases the seat; "pay again" supersedes old ones.
-        if (!p || (p.payment.checkoutSessionId !== s.id && p.deposit.checkoutSessionId !== s.id)) return;
-        if (p.payment.status === 'PENDING') await engine.transition(p.eventId, p.id, { type: 'CHECKOUT_EXPIRED' });
+        // Only the CURRENT session expiring releases the seat; the machine checks that inside the transaction.
+        await engine.transition(ref.eventId, ref.participantId, { type: 'CHECKOUT_EXPIRED', sessionId: s.id });
         return;
       }
 

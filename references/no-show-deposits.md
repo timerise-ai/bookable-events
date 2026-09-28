@@ -128,7 +128,7 @@ export function createTick(engine: EventsEngine, webhook: WebhookHandler) {
       }
       if (session.status === 'open') await gateway.expireCheckout(sessionId);
     }
-    await engine.transition(p.eventId, p.id, { type: 'CHECKOUT_EXPIRED' });
+    await engine.transition(p.eventId, p.id, { type: 'CHECKOUT_EXPIRED', sessionId });
   }
 
   async function placeHold(p: Participant) {

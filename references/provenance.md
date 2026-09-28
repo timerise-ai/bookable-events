@@ -106,6 +106,28 @@ staff. Slot blocking stays with the host's booking module, so the first item
 is out of scope here; each of the others is addressed in the corresponding
 reference.
 
+### 16. An old session's expiry could release a resumed seat
+Found by the agent eval of 0.1.1, in the templates themselves. "Pay again" expired the old session before the
+new one was stored, and the webhook compared session ids outside the transaction, so the old session's
+`expired` event could release the seat the customer was paying for; the payment then came back as late money.
+**Shipped:** resume clears the stored session ids first; `CHECKOUT_EXPIRED` carries the session it saw and
+the machine ignores one that is no longer current. A lifecycle test delivers the webhook mid-resume.
+
+### 17. A second payment for a paid seat was never refunded
+Found by the same eval. Two Checkout tabs paid for one seat: the second `TICKET_PAID` failed the transition,
+the webhook answered 500 until Stripe gave up, and the money stayed. **Shipped:** it raises
+`LatePaymentError`, so the webhook refunds it; a payment already recorded is a no-op in every status. A
+lifecycle test pays twice.
+
+### 18. Cancelling an event skipped guests already checked in
+Found by the same eval. The no-cancel-after-arrival rule applied to every actor, so a cancelled event left
+arrived guests charged and reported them as failures on every re-run. **Shipped:** the rule binds the
+customer only; staff and the event cancel refund arrived guests. A lifecycle test cancels after check-in.
+
+### 19. The check-in list lacked its own header
+Found by the same eval. The screen in [ui.md](ui.md) shows the event name and times, and the list route
+returned only capacity and seats taken. **Shipped:** the route returns name, date, times and zone.
+
 ## Kept deliberately
 
 | Choice | Why it stays |

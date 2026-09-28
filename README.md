@@ -24,7 +24,7 @@ properties such a module has to hold: a paid event is never free in a currency i
 declined attempt inside open Checkout keeps the seat, and only session expiry releases it; money that
 arrives for a released seat is refunded; a refund is the amount frozen at registration; a no-show hold is
 placed inside the card network's window and captured only after settlement; a redelivered webhook or a
-repeated action changes nothing. The three suites, 47 tests, state each one, and
+repeated action changes nothing. The three suites, 50 tests, state each one, and
 [`references/provenance.md`](references/provenance.md) has the record.
 
 ## Install
@@ -96,7 +96,7 @@ the skill stays cheap in context until a topic is actually needed.
 | `references/api-routes.md` | Route surface, error codes, authorization rules, the host seam file, every route handler |
 | `references/ui.md` | Event card, registration dialog, manage page, staff check-in screen, admin form |
 | `references/testing.md` | Vitest config, in-memory store and fake gateway, the core and state-machine suites |
-| `references/testing-lifecycles.md` | 17 end-to-end lifecycle tests, including three regression tests |
+| `references/testing-lifecycles.md` | 20 end-to-end lifecycle tests, including three regression tests |
 | `references/operations.md` | Environment, the tick, what operators need to see, reconciliation, emails, go-live |
 | `references/provenance.md` | The engineering ledger: what the audit changed and how the templates verify it, what was kept on purpose, what is new in the skill, and the order of work on an existing module |
 | `evals/` | The prompts an operator types after installing (`prompts.md`) and one file per agent eval: the skill installed into an empty Next.js app, one prompt, no help, then type-checked, built and tested |
@@ -144,7 +144,7 @@ dependency-free.
 Every TypeScript block in `references/` names its destination on its first line and is written to compile
 as one project under `strict` and `noUncheckedIndexedAccess`. Before a release the blocks are written to a
 scratch project, type-checked both ways, and the three suites run under Vitest: 22 core tests, 8
-state-machine tests and 17 lifecycle tests, 47 in all. The `pg` client and the SQL are checked by reading.
+state-machine tests and 20 lifecycle tests, 50 in all. The `pg` client and the SQL are checked by reading.
 `CLAUDE.md` has the recipe.
 
 ## Not this
@@ -160,7 +160,7 @@ state-machine tests and 17 lifecycle tests, 47 in all. The `pg` client and the S
 
 Issues and pull requests are welcome here. Pure markdown, with no build step, but the code blocks are checked:
 every block names its destination on the first line, and every TypeScript block is written to compile as one
-project under `strict` and `noUncheckedIndexedAccess` and to pass its suites under Vitest, 47 tests. Claims in
+project under `strict` and `noUncheckedIndexedAccess` and to pass its suites under Vitest, 50 tests. Claims in
 this skill are meant to be verifiable: if you change a factual claim, say how you verified it, whether against
 the Stripe API reference, Stripe test mode, the card networks' authorization rules as Stripe documents them,
 the IANA time zone database, or a reproduction.

@@ -1,6 +1,6 @@
 # Testing
 
-Three suites, 47 tests, runnable with Vitest once the templates are in place.
+Three suites, 50 tests, runnable with Vitest once the templates are in place.
 They are written against the template files and paths used throughout this
 skill (`@/lib/events/*`).
 
@@ -8,7 +8,7 @@ skill (`@/lib/events/*`).
 |---|---|---|
 | `test/core.test.ts` | 22 | Currency conversion (0/2/3 decimals, ISK/UGX legacy), pricing never free by currency switch, DST-correct time, the hold schedule |
 | `test/machine.test.ts` | 8 | Same-object no-ops, purity, stale-intent guard, no seat resurrection, renewal effects |
-| `test/engine.test.ts` ([testing-lifecycles.md](testing-lifecycles.md)) | 17 | Whole lifecycles against an in-memory store and a fake gateway, including three regression tests for defects found in the earlier implementation |
+| `test/engine.test.ts` ([testing-lifecycles.md](testing-lifecycles.md)) | 20 | Whole lifecycles against an in-memory store and a fake gateway, including three regression tests for defects found in the earlier implementation |
 
 Scenario tests move an injected clock (`now: () => new Date(clock.t)`) instead
 of sleeping, so a three-week deposit lifecycle runs in milliseconds.
@@ -431,4 +431,4 @@ describe('participant machine', () => {
 
 ## Lifecycles
 
-The 17 scenario tests are in [testing-lifecycles.md](testing-lifecycles.md).
+The 20 scenario tests are in [testing-lifecycles.md](testing-lifecycles.md).

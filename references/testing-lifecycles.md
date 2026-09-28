@@ -9,7 +9,7 @@ outcome.
 |---|---|
 | Hold placed in Checkout | release on full arrival, capture after grace (not before), partial capture, waiver, early vs late cancel, venue cancel, idempotent check-in |
 | Card saved, hold placed later | placement exactly at `holdDueAt` inside the Visa MIT window, decline, then email, then seat released at cutoff |
-| Paid tickets | unpriced currency refused (**regression**), declined attempt keeps the seat (**regression**), refund of the frozen amount, late money refunded (**regression**), Stripe outage releases the seat, capacity, duplicate webhook |
+| Paid tickets | unpriced currency refused (**regression**), declined attempt keeps the seat (**regression**), refund of the frozen amount, late money refunded (**regression**), Stripe outage releases the seat, capacity, duplicate webhook, an old session expiring during "pay again", a second payment refunded, venue cancel after check-in |
 | Manage token | per-participant HMAC verification |
 
 ```ts
@@ -263,6 +263,47 @@ describe('paid tickets', () => {
     });
     expect(await s.webhook.handle(evt)).toBe('processed');
     expect(await s.webhook.handle(evt)).toBe('duplicate');
+  });
+
+  it('an old session expiring during "pay again" keeps the seat', async () => {
+    const s = setup(paidEvent);
+    const r = await s.engine.register({ ...guest, ticketCount: 1 });
+    // The old session's `expired` webhook can arrive before the new session id is stored.
+    s.fake.gw.expireCheckout = async (id) => {
+      await s.webhook.handle(stripeEvent('checkout.session.expired', {
+        id, metadata: { kind: 'event_ticket', eventId: 'ev1', participantId: r.participantId },
+      }));
+    };
+    await s.engine.resumeCheckout('ev1', r.participantId);
+    expect(s.part(r.participantId).payment.status).toBe('PENDING');
+    expect(s.seats()).toBe(1);
+  });
+
+  it('a second payment for a seat already paid is refunded', async () => {
+    const s = setup(paidEvent);
+    const r = await s.engine.register({ ...guest, ticketCount: 1 });
+    for (const [cs, pi] of [['cs_a', 'pi_a'], ['cs_b', 'pi_b']]) {
+      await s.webhook.handle(stripeEvent('checkout.session.completed', {
+        id: cs, payment_intent: pi, payment_status: 'paid', amount_total: 2500, currency: 'usd',
+        metadata: { kind: 'event_ticket', eventId: 'ev1', participantId: r.participantId },
+      }));
+    }
+    expect(s.part(r.participantId).payment).toMatchObject({ status: 'CONFIRMED', paymentIntentId: 'pi_a' });
+    expect(s.fake.calls).toContain(`refund:pi_b:2500usd:late:${r.participantId}`);
+    expect(s.seats()).toBe(1);
+  });
+
+  it('cancelling the event refunds guests who already checked in', async () => {
+    const s = setup(paidEvent);
+    const r = await s.engine.register({ ...guest, ticketCount: 1 });
+    await s.webhook.handle(stripeEvent('checkout.session.completed', {
+      id: 'cs', payment_intent: 'pi_t', payment_status: 'paid', amount_total: 2500, currency: 'usd',
+      metadata: { kind: 'event_ticket', eventId: 'ev1', participantId: r.participantId },
+    }));
+    await s.engine.staff.checkIn('ev1', r.participantId, 1, 'staff1');
+    expect(await s.engine.staff.cancelEvent('ev1', 'admin')).toEqual({ cancelled: 1, failed: [] });
+    expect(s.part(r.participantId).payment.status).toBe('REFUNDED');
+    expect(s.seats()).toBe(0);
   });
 });
 

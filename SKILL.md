@@ -17,19 +17,17 @@ description: >
   tickets, refund on cancel, cancel event and refund everyone. Carries a pure
   participant state machine, the hold timing that survives Visa's shorter
   merchant-initiated window, any ISO currency with USD by default, refunds of
-  the amount frozen at registration, and 47 tests that hold each rule.
+  the amount frozen at registration, and 50 tests that hold each rule.
   Next.js App Router; Firestore or Postgres behind an EventStore seam. Not a
   marketplace payout skill, not subscriptions, not seat maps or resale.
 ---
 
 # Bookable Events with No-Show Deposits
 
-Events are the easy half. The hard half is money that moves while seats are
-scarce: a seat taken before payment, a payment that arrives after the seat
-expired, a hold that lapses before the no-show can be charged. This skill runs
-every change through **one pure state machine inside a transaction, and calls
-Stripe only after commit**, leaving a durable intent a single cron retries
-until Stripe confirms.
+Events are the easy half. The hard half is money that moves while seats are scarce: a seat taken before
+payment, a payment that arrives after the seat expired, a hold that lapses before the no-show can be charged.
+This skill runs every change through **one pure state machine inside a transaction, and calls Stripe only
+after commit**, leaving a durable intent a single cron retries until Stripe confirms.
 
 ## When to use
 
@@ -41,9 +39,8 @@ until Stripe confirms.
 
 ## When NOT to use
 
-- **Splitting payments between sellers, payouts, marketplace escrow**: use the
-  sibling `stripe-connect-subscriptions` skill.
-- **Recurring memberships or subscriptions**: also `stripe-connect-subscriptions`.
+- **Splitting payments between sellers, payouts, marketplace escrow, recurring memberships or
+  subscriptions**: use the sibling `stripe-connect-subscriptions` skill.
 - **Time-slot resource booking (lanes, courts, rooms by the hour)**: a booking
   engine's job; this skill only notes where events block such slots.
 - **Walk-up touchscreen registration**: the sibling `booking-kiosk` skill owns
@@ -81,7 +78,7 @@ rename table is in [data-model.md](references/data-model.md).
 |---|---|---|
 | Domain entities | event, participant, ticket, deposit, and a rename table | its vocabulary (class, session, attendee, and so on) |
 | Tenant scope | `locationId` on events and participants, checked per route | its venue, site or workspace model |
-| Auth | `getCustomer`, `getStaff`, `canAccessLocation` in `host.ts` | Clerk, NextAuth, Supabase, Firebase, or its own |
+| Auth | `getCustomer`, `getStaff`, `canAccessLocation` in `host.ts` | Clerk, NextAuth, Supabase, Firebase, or its own; with none, `getCustomer` and `getStaff` return `null`, never identity from headers, query, body or a shared key |
 | Data access | `EventStore` port; Firestore and Postgres implementations | its SDK or ORM |
 | Payments | `StripeGateway` behind `PaymentGateway`; webhook handler | Stripe keys; optional shared webhook |
 | Stored credit | optional `BalanceLedger` port | its wallet (the sibling `ledger-wallet` skill implements the port), or `null` |
@@ -95,10 +92,9 @@ rename table is in [data-model.md](references/data-model.md).
 
 ## Critical facts
 
-1. **Holds expire.** About 7 days when the customer authorizes in Checkout, only
-   **about 4 days 18 hours for a Visa hold the server places later**. Events
-   settling within 6 days hold in Checkout; later ones save the card and the
-   tick holds 4 days before settlement.
+1. **Holds expire.** About 7 days when the customer authorizes in Checkout, only **about 4 days 18 hours for a
+   Visa hold the server places later**. Events settling within 6 days hold in Checkout; later ones save the
+   card and the tick holds 4 days before settlement.
 2. **`payment_intent.payment_failed` is not the end.** Checkout stays open
    after a decline; only `checkout.session.expired` ends a pending seat.
 3. **Free means free in every currency.** A missing or zero price in the
@@ -111,10 +107,9 @@ rename table is in [data-model.md](references/data-model.md).
 
 ## Hard rules
 
-1. **Transaction first, Stripe second.** Never call Stripe inside a database
-   transaction, and never write state after a Stripe call without a durable
-   intent first. Transaction callbacks re-run, and a failed write after a
-   capture loses the record of money moved.
+1. **Transaction first, Stripe second.** Never call Stripe inside a database transaction, and never write
+   state after a Stripe call without a durable intent first. Transaction callbacks re-run, and a failed write
+   after a capture loses the record of money moved.
 2. **Identity never comes from the request body.** Customers from the session,
    guests by HMAC manage link, staff by the host guard with location scope on
    every `[eventId]` route.
@@ -127,16 +122,21 @@ rename table is in [data-model.md](references/data-model.md).
 
 ## Quick start
 
-1. Model: [data-model.md](references/data-model.md), the rename table, types, seat accounting.
-2. Pure core: [money-and-time.md](references/money-and-time.md), then
+Copy every block to the path on its first line, verbatim; edit only `lib/events/host.ts` (`HOST:` bodies,
+store line). `test/fixtures.ts` and the three suites run as written, under Vitest. A template you think is
+wrong stays as shipped: [provenance.md](references/provenance.md) may say why; if not, say so in the handover.
+
+1. Model: [data-model.md](references/data-model.md), [money-and-time.md](references/money-and-time.md),
    [participant-lifecycle.md](references/participant-lifecycle.md).
-3. Store: [firestore.md](references/firestore.md) or [postgres.md](references/postgres.md).
-4. Engine and flows: [engine.md](references/engine.md), [registration.md](references/registration.md).
-5. Stripe: [stripe.md](references/stripe.md); deposits: [no-show-deposits.md](references/no-show-deposits.md).
-6. Routes: [api-routes.md](references/api-routes.md); screens: [ui.md](references/ui.md).
-7. Tests: [testing.md](references/testing.md), [testing-lifecycles.md](references/testing-lifecycles.md).
-8. Go live: [operations.md](references/operations.md).
-9. Before changing a template: [provenance.md](references/provenance.md).
+2. Store: [firestore.md](references/firestore.md) or [postgres.md](references/postgres.md).
+3. Engine and flows: [engine.md](references/engine.md), [registration.md](references/registration.md).
+4. Stripe: [stripe.md](references/stripe.md); deposits: [no-show-deposits.md](references/no-show-deposits.md).
+5. Routes: [api-routes.md](references/api-routes.md); screens: [ui.md](references/ui.md); tests:
+   [testing.md](references/testing.md), [testing-lifecycles.md](references/testing-lifecycles.md).
+6. Go live: [operations.md](references/operations.md). `.env.example` lists its five variables, empty, and
+   the templates read them as shipped: no fallback, no other name. Hand over those five, the webhook
+   endpoint and its eight event types, the 5-minute tick, that emails only log until the `Notifier` is wired,
+   and, in an app without login, that staff routes answer 401 until `getStaff` is.
 
 ## Reference directory
 

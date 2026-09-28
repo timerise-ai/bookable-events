@@ -63,10 +63,10 @@ name from `SKILL.md` and `README.md`. The standard every skill follows is `../sk
 
   No `tsconfig.json` ships with the templates. The scratch one should be `strict` and must map the `@/`
   alias the imports use (`"paths": { "@/*": ["./*"] }`); `vitest.config.ts` (in `testing.md`) maps the same
-  alias for the tests. Both type-checks must be clean and all 47 tests must pass. Blocks that need a package
+  alias for the tests. Both type-checks must be clean and all 50 tests must pass. Blocks that need a package
   the scratch project lacks (the `pg` client in `postgres.md`, and `postgres-store.ts` which imports it),
   `vercel.ts`, and the SQL are checked by reading. Do not add a `package.json` to this repository.
-- **Test counts are claims.** `testing.md` states 22 + 8 + 17 = 47 tests; `README.md`, `SKILL.md` and
+- **Test counts are claims.** `testing.md` states 22 + 8 + 20 = 50 tests; `README.md`, `SKILL.md` and
   `CHANGELOG.md` repeat the totals. Change a suite, change the numbers.
 - **Keep the three indexes in sync** with `references/`: the quick start and the reference directory in
   `SKILL.md`, and the file table in `README.md`. Cross-links between references are relative

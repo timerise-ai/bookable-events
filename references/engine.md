@@ -280,7 +280,11 @@ export function createEventsEngine(deps: EngineDeps) {
       const resumable = p.payment.status === 'PENDING' ||
         (p.payment.status === 'CONFIRMED' && (p.deposit.status === 'HOLD_FAILED' || p.deposit.status === 'HOLD_REQUIRES_ACTION'));
       if (!resumable) throw new RegistrationError('registration_closed', 409);
-      return { ...p, checkoutAttempt: p.checkoutAttempt + 1 };
+      // Forget the old session before expiring it, so its `expired` webhook cannot release this seat.
+      return {
+        ...p, checkoutAttempt: p.checkoutAttempt + 1,
+        payment: { ...p.payment, checkoutSessionId: null }, deposit: { ...p.deposit, checkoutSessionId: null },
+      };
     });
     if (!res) throw new RegistrationError('event_not_found', 404);
     const old = res.before.payment.checkoutSessionId ?? res.before.deposit.checkoutSessionId;
