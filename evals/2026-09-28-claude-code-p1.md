@@ -23,3 +23,12 @@ isolated: true
 timedOut: false
 runUrl: https://github.com/timerise-ai/bookable-events/actions/runs/36439509539
 ---
+
+Rubric 6/8 (claude-opus-5-5, scored from the JSON summary). Checks pass and the suite runs as shipped under
+vitest, 47 tests. Item 2 fails: it changed the check-in list route to return the event name, times and
+settlement time. That points to a gap in the template, which returns capacity and seats but not the header the
+check-in screen in `ui.md` shows. Item 6 fails: the app had no login, so it invented `EVENTS_STAFF_ACCOUNTS`
+(id, role, token and locations per account) for staff sign-in; the skill says nothing about a host without
+auth. Staff identity is still a verified token, so the boundary holds. The handover names the env vars, the
+eight webhook event types, the 5-minute tick and the unsent emails, and it reports that cancelling an event
+leaves checked-in guests charged, which a probe against the template confirms.
