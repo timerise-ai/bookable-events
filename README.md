@@ -99,6 +99,8 @@ the skill stays cheap in context until a topic is actually needed.
 | `references/testing-lifecycles.md` | 17 end-to-end lifecycle tests, including three regression tests |
 | `references/operations.md` | Environment, the tick, what operators need to see, reconciliation, emails, go-live |
 | `references/provenance.md` | The engineering ledger: what the audit changed and how the templates verify it, what was kept on purpose, what is new in the skill, and the order of work on an existing module |
+| `evals/` | The prompts an operator types after installing (`prompts.md`) and one file per agent eval: the skill installed into an empty Next.js app, one prompt, no help, then type-checked, built and tested |
+| `.github/workflows/agent-eval.yml` | The caller of the index's reusable eval workflow: prompt 1 in Claude Code, Codex CLI and Gemini CLI on every published release, and any agent and prompt on a maintainer's dispatch |
 
 The seam is the adaptation contract table in `SKILL.md`, which this skill keeps there instead of in a
 `references/adaptation.md`, with the rename table in `references/data-model.md`. It bounds the store, behind
