@@ -38,6 +38,13 @@ name from `SKILL.md` and `README.md`. The standard every skill follows is `../sk
   `registration.md`, `stripe.md` and `no-show-deposits.md` the flows; `firestore.md` and `postgres.md` the
   stores; `api-routes.md` and `ui.md` the surface; `testing.md` and `testing-lifecycles.md` the suites;
   `operations.md` running it; `provenance.md` the ledger.
+- `evals/`: `prompts.md` holds what an operator types after installing, in their words; the first prompt
+  is the agent eval run before every release. Every other file there is one eval run: measured frontmatter
+  that is never edited, then the notes of the person who ran it. Add a prompt rather than rewording one that
+  has results. The procedure is section 10 of the index's STANDARD.md.
+- `.github/workflows/agent-eval.yml`: the caller of the index's reusable eval workflow, copied verbatim from
+  section 10 of the standard and run on every published release and on a maintainer's dispatch. It is the
+  same in every skill; never edit it, and never add a trigger on `push` or `pull_request`.
 
 ## Editing conventions
 
