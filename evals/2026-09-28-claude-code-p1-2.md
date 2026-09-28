@@ -23,3 +23,11 @@ isolated: true
 timedOut: false
 runUrl: https://github.com/timerise-ai/bookable-events/actions/runs/36445935473
 ---
+
+Rubric 8/8 (claude-opus-5-5, scored from the JSON summary). The templates are copied unchanged except
+`host.ts`, the 50 tests run under vitest as shipped, and `getCustomer` and `getStaff` return `null` because
+the app has no login. `.env.example` lists the five variables and the host's `DATABASE_URL`. The handover
+names the five variables, the webhook and its eight event types, the 5-minute tick, the logged emails and the
+closed staff routes. Leaving out the Supabase read policy on plain Postgres is the documented variant. To
+reach the status page after Checkout it stores the manage link in the browser, because the success URL carried
+no token; 0.1.3 adds the token.
