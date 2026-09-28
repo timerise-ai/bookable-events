@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-09-28
+
+Fix release, from scoring the prompt-1 agent eval runs against 0.1.2. Apps built from 0.1.2 should copy in
+the new `webhook.ts`; apps built from any earlier version, also `engine.ts` and the success URL in `host.ts`.
+
+### Fixed
+- The `charge.refunded` for a refunded second payment no longer marks the paid seat refunded: the handler
+  ignores a payment intent that is not the participant's own (`stripe.md`). The second-payment lifecycle test
+  now delivers that webhook.
+- The Checkout success URL carries the manage token, so a guest's "registered" page can read their status
+  (`engine.md`, `api-routes.md`).
+
+### Changed
+- `SKILL.md` quick start: no extra checks on the env vars, and the final message itself names what the
+  operator must set up.
+- `api-routes.md`: the runtime block in `host.ts` is copied as shipped apart from the store line.
+
 ## [0.1.2] - 2026-09-28
 
 Fix release, from scoring the prompt-1 agent eval runs against 0.1.1. Apps built from 0.1.0 or 0.1.1 should
